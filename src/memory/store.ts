@@ -33,6 +33,11 @@ export interface Turn {
   userTimezone: string;
 }
 
+/** A stored turn with its session's title, as recall returns it. */
+export interface RecalledTurn extends Turn {
+  sessionTitle: string | null;
+}
+
 export interface NewTurn {
   turnId: string;
   sessionId: string;
@@ -54,6 +59,11 @@ const SESSION =
 const TURN =
   'turn_id AS turnId, session_id AS sessionId, user_id AS userId, user_message AS userMessage, ' +
   'assistant_message AS assistantMessage, created_at AS createdAt, user_timezone AS userTimezone';
+
+const RECALLED =
+  't.turn_id AS turnId, t.session_id AS sessionId, t.user_id AS userId, t.user_message AS userMessage, ' +
+  't.assistant_message AS assistantMessage, t.created_at AS createdAt, t.user_timezone AS userTimezone, ' +
+  's.title AS sessionTitle';
 
 export class Store implements MetricsSink {
   private readonly db: DatabaseSync;
@@ -91,13 +101,13 @@ export class Store implements MetricsSink {
 
   // --- sessions ---
 
-  createSession(userId: string, now: Date): Session {
+  createSession(userId: string, now: Date, title: string | null = null): Session {
     const sessionId = randomUUID();
     const at = now.toISOString();
     this.db
-      .prepare('INSERT INTO sessions (session_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)')
-      .run(sessionId, userId, at, at);
-    return { sessionId, userId, title: null, createdAt: at, updatedAt: at };
+      .prepare('INSERT INTO sessions (session_id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run(sessionId, userId, title, at, at);
+    return { sessionId, userId, title, createdAt: at, updatedAt: at };
   }
 
   getSession(userId: string, sessionId: string): Session | undefined {
@@ -150,6 +160,10 @@ export class Store implements MetricsSink {
     return rows.map(({ publishedAt, ...rest }) => ({ ...rest, ...(publishedAt ? { publishedAt } : {}) }));
   }
 
+  hasTurn(turnId: string): boolean {
+    return this.db.prepare('SELECT 1 FROM turns WHERE turn_id = ?').get(turnId) !== undefined;
+  }
+
   /** A session's turns, oldest first. With limit, only the most recent ones. */
   listTurns(userId: string, sessionId: string, limit?: number): Turn[] {
     if (limit === undefined) {
@@ -164,6 +178,57 @@ export class Store implements MetricsSink {
       )
       .all(userId, sessionId, limit) as unknown as Turn[];
     return newestFirst.reverse();
+  }
+
+  // --- recall: always by user_id, never by session ---
+
+  /** The user's turns with created_at in [fromUtc, toUtc), oldest first. */
+  turnsBetween(userId: string, fromUtc: string, toUtc: string, limit = 200): RecalledTurn[] {
+    return this.db
+      .prepare(
+        `SELECT ${RECALLED} FROM turns t LEFT JOIN sessions s ON s.session_id = t.session_id
+         WHERE t.user_id = ? AND t.created_at >= ? AND t.created_at < ?
+         ORDER BY t.created_at, t.rowid LIMIT ?`,
+      )
+      .all(userId, fromUtc, toUtc, limit) as unknown as RecalledTurn[];
+  }
+
+  /** The user's turns that mention any of the keywords in the question or the answer, newest first. */
+  turnsMentioning(userId: string, keywords: string[], limit = 50): RecalledTurn[] {
+    if (keywords.length === 0) return [];
+    const like = "(t.user_message LIKE ? ESCAPE '\\' OR t.assistant_message LIKE ? ESCAPE '\\')";
+    const patterns = keywords.flatMap((k) => {
+      const p = `%${k.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      return [p, p];
+    });
+    return this.db
+      .prepare(
+        `SELECT ${RECALLED} FROM turns t LEFT JOIN sessions s ON s.session_id = t.session_id
+         WHERE t.user_id = ? AND (${keywords.map(() => like).join(' OR ')})
+         ORDER BY t.created_at DESC, t.rowid DESC LIMIT ?`,
+      )
+      .all(userId, ...patterns, limit) as unknown as RecalledTurn[];
+  }
+
+  /** The user's most recent turns, newest first. */
+  latestTurns(userId: string, limit: number): RecalledTurn[] {
+    return this.db
+      .prepare(
+        `SELECT ${RECALLED} FROM turns t LEFT JOIN sessions s ON s.session_id = t.session_id
+         WHERE t.user_id = ? ORDER BY t.created_at DESC, t.rowid DESC LIMIT ?`,
+      )
+      .all(userId, limit) as unknown as RecalledTurn[];
+  }
+
+  /** When the user's closest turn before fromUtc and closest turn at or after toUtc were made. */
+  nearestTurnTimes(userId: string, fromUtc: string, toUtc: string): { before?: string; after?: string } {
+    const before = this.db
+      .prepare('SELECT MAX(created_at) AS at FROM turns WHERE user_id = ? AND created_at < ?')
+      .get(userId, fromUtc) as { at: string | null };
+    const after = this.db
+      .prepare('SELECT MIN(created_at) AS at FROM turns WHERE user_id = ? AND created_at >= ?')
+      .get(userId, toUtc) as { at: string | null };
+    return { ...(before.at ? { before: before.at } : {}), ...(after.at ? { after: after.at } : {}) };
   }
 
   // --- metrics ---

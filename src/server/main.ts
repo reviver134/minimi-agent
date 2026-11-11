@@ -6,7 +6,7 @@ import { ConfigError, loadConfig } from '../config.ts';
 import { GeminiModel } from '../llm/gemini.ts';
 import { Store } from '../memory/store.ts';
 import { TavilySearch } from '../search/tavily.ts';
-import { systemClock } from '../temporal/clock.ts';
+import { fixedClock, systemClock } from '../temporal/clock.ts';
 import { createApp } from './app.ts';
 
 const root = join(import.meta.dirname, '..', '..');
@@ -36,13 +36,16 @@ const app = createApp({
   }),
   search: new TavilySearch({ apiKey: config.tavilyApiKey }),
   store: new Store(config.dbPath),
-  clock: systemClock,
+  // CLOCK_OVERRIDE fixes "now" so the evals always run on the same day.
+  clock: config.clockOverride ? fixedClock(config.clockOverride) : systemClock,
   systemPrompt: readPrompt('system.md'),
   titlePrompt: readPrompt('title.md'),
+  understandPrompt: readPrompt('understand.md'),
 });
 
 // Local only: there is no login, so the server does not listen on the network.
 serve({ fetch: app.fetch, port: config.port, hostname: '127.0.0.1' }, (info) => {
   console.log(`minimi-agent is running at http://localhost:${info.port}`);
+  if (config.clockOverride) console.log(`clock is fixed at ${config.clockOverride}`);
   console.log(`models: main=${config.modelMain} (thinking ${config.thinkingLevel}) fast=${config.modelFast}`);
 });

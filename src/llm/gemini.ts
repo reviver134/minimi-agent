@@ -1,5 +1,5 @@
 import { createGoogle } from '@ai-sdk/google';
-import { type ModelMessage, streamText, tool } from 'ai';
+import { type ModelMessage, Output, streamText, tool } from 'ai';
 import { z } from 'zod';
 import type {
   AgentMessage,
@@ -74,6 +74,7 @@ export class GeminiModel implements ModelProvider {
       instructions: request.system,
       messages: toSdkMessages(request.messages),
       ...(hasTools ? { tools, toolChoice: request.toolChoice ?? 'auto' } : {}),
+      ...(request.json ? { output: Output.object({ schema: request.json as z.ZodType }) } : {}),
       providerOptions: {
         google: {
           thinkingConfig: {

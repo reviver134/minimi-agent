@@ -261,6 +261,8 @@ async function ask(message) {
   };
   send.disabled = true;
   add('msg user', message);
+  const memory = add('status');
+  memory.hidden = true;
   const status = add('status');
   status.hidden = true;
   const answer = add('msg assistant pending');
@@ -308,6 +310,10 @@ async function ask(message) {
           drawing = true;
           requestAnimationFrame(draw);
         }
+      } else if (name === 'recall') {
+        memory.hidden = false;
+        const found = data.found === 0 ? 'nothing found' : `${data.found} found`;
+        memory.textContent = `Checked your past chats (${data.looked_for}): ${found}`;
       } else if (name === 'search') {
         for (const q of data.queries) queries.push({ text: q, state: 'running' });
         showStatus();

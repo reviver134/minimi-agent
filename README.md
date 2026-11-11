@@ -2,7 +2,7 @@
 
 A chat agent with one tool, web search. It remembers dated conversations and can re-check its old answers against the live web.
 
-Status: sessions 1 to 3 of 6 are built. It is a streaming chat with Gemini that searches the web (Tavily) when a question needs fresh facts, cites its sources by number, keeps each person's chats in SQLite under their name and remembers the last turns of a chat. Recall by date and re-checking old answers are not built yet.
+Status: sessions 1 to 4 of 6 are built. It is a streaming chat with Gemini that searches the web (Tavily) when a question needs fresh facts, cites its sources by number, keeps each person's chats in SQLite under their name, and recalls past conversations by date and topic ("what did I ask you last Tuesday about Postgres?"). Structured answer records, the re-check flow and the user profile are not built yet.
 
 - Plan, design principles and per-session test sets: [docs/PLAN.md](docs/PLAN.md)
 - Evaluation questions: [evals/questions.md](evals/questions.md)
@@ -23,6 +23,16 @@ npm run dev
 ```
 
 Then open http://localhost:3000.
+
+## Try the eval history
+
+The eval questions in [evals/questions.md](evals/questions.md) assume a small history for a user called `demo` and a fixed date. Load the history:
+
+```bash
+npm run seed
+```
+
+Then set `CLOCK_OVERRIDE=2026-11-11T10:00:00+05:30` in `.env`, restart, and sign in as `demo`.
 
 ## Test
 

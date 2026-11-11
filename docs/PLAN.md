@@ -33,7 +33,7 @@ Brief requirements this plan must satisfy:
 | Server | Hono, one process | Serves the API and the static UI |
 | UI | One static page, no build step | Streaming chat, sources, session list, timings line |
 | Storage | SQLite through built-in `node:sqlite` | No native compile on `npm install`; confirm full-text search (FTS5) is available in session 1, fall back to `LIKE` if not |
-| Dates | `chrono-node` plus an injectable clock | |
+| Dates | Our own resolver (`src/temporal/dates.ts`) plus an injectable clock | `chrono-node` was dropped in session 4: recall needs "most recent past" readings and two candidates for "last Tuesday", which is less code to write than to bend a general parser into |
 | Tests | Vitest | Mocks for model, search and clock |
 
 Gemini's built-in Google Search grounding is not used: the agent needs control over parallelism, timing and which sources are stored.
@@ -233,6 +233,33 @@ Test set:
 | S4-T9 | Auto | Recall as a different user | Returns nothing |
 | S4-T10 | Auto | Recall query timing on 5,000 seeded turns | Under 20 ms |
 | S4-T11 | Manual | Evals C1 to C6 and E1 to E4 | Pass as defined in `evals/questions.md` |
+
+Built on 2026-11-11 (session 4):
+
+- **Dates are resolved by code** (`src/temporal/dates.ts`): a day is a calendar day in the user's timezone. A date with no year, or a bare weekday, is the most recent one not in the future. "last Tuesday" gives two candidates when the most recent Tuesday is in the current week. Future phrases ("next Tuesday") are marked, so recall can say there can be no record. Day ranges become UTC bounds with the timezone's offset on that day, including days when clocks change.
+- **Which messages touch memory:** only a message with a date phrase or a memory phrase ("did I ask", "you told me", "you shortlisted", "still correct"). All others go straight to the model with no extra call.
+- **Understanding:** a plain "what did I/we ask ... <date> [about X]" is settled by code. Anything else goes to one fast-model call that returns JSON (`needs_recall`, `needs_search`, `topics`, `when`, `date_from`, `date_to`). The model is given the dates code found, numbered, and a 14-day calendar; it picks which phrases are about the earlier conversation and does no date arithmetic. If the call fails, is slow (6 s) or returns bad JSON, rules take over.
+- **Recall** (`src/memory/recall.ts`) filters by `user_id` and the UTC range, then by topic keywords in the question and answer. The plan's "widen by one day" is done honestly: an empty day returns nothing, plus the nearest earlier and later days that do have records, so the model can offer them without presenting them as the day asked for. A topic that no record in the period mentions returns the period with a note saying so (eval E2).
+- **In the prompt:** `<recalled_records>` is appended after `<context>`, last, so the fixed prefix stays cacheable. Old citation numbers are removed from recalled answers. `memory_rules` in `prompts/system.md` tell the model to answer only from the records and never invent one.
+- **No search for pure recall:** when understanding says the web is not needed, the model is called with `toolChoice: none`.
+- **Clock:** `CLOCK_OVERRIDE` fixes "now". **Seed:** `npm run seed` loads the eval history for `demo` (`evals/seed.ts`); the stored answers are plausible figures made for the evals, not checked facts.
+
+Live results, 2026-11-11, `gemini-3.5-flash-lite`, clock fixed at 11 November 10:00 (S4-T11):
+
+| Eval | Result |
+|---|---|
+| C1 3 November | Pass: both questions, no search |
+| C2 Monday | Pass: CRM shortlist and the preference turn |
+| C3 last Tuesday about Postgres | Pass: the 3 November Postgres turn only, and it names the date |
+| C4 7 November | Pass: the laptop turn |
+| C5 6 November | Pass: no record; offers 3 and 7 November |
+| C6 this month | Pass: all four topics with dates |
+| E1 1 October | Pass: no record; offers 3 November |
+| E2 "you told me to use MongoDB" | Pass: no record of saying that; lists what was discussed that week |
+| E3 25 December | Pass: read as 25 December 2025; no record |
+| E4 as `other` | Pass: no record, nothing from `demo`. The first run wrongly offered "today" as the nearest day; the no-record text now says there is no nearest day, and the re-run was clean |
+
+Latency: the recall query itself takes 1 to 5 ms (target 20 ms). Time to first token for recall-only questions was 5.6 to 12.6 s when every one paid for the understanding call (1.7 to 4.6 s each); with plain date questions settled by code it is 1.5 to 4.4 s. The 2 s target is still missed most of the time, and what is left is one model call. `THINKING_LEVEL=minimal` against `low` showed no clear difference over four questions.
 
 ### Session 5: answer records and re-checking
 

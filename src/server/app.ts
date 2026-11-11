@@ -4,16 +4,19 @@ import { readFile } from 'node:fs/promises';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { HISTORY_MAX_TURNS, buildSessionHistory } from '../agent/context.ts';
+import { HISTORY_MAX_TURNS, buildSessionHistory, describeLookup, formatRecalled } from '../agent/context.ts';
 import { runAgent } from '../agent/loop.ts';
 import { buildSystemPrompt } from '../agent/prompt.ts';
+import { hasMemoryCue, understandPlainRecall, understandQuery } from '../agent/understand.ts';
 import { type Source, SourceRegistry } from '../agent/webSearch.ts';
 import type { ModelProvider } from '../llm/provider.ts';
+import { recall } from '../memory/recall.ts';
 import { type Session, type Store, normaliseName } from '../memory/store.ts';
 import { makeTitle } from '../memory/title.ts';
 import type { SearchProvider } from '../search/provider.ts';
 import { timed } from '../telemetry/timed.ts';
 import { type Clock, isTimezone } from '../temporal/clock.ts';
+import { localDay, resolveDates } from '../temporal/dates.ts';
 
 export interface AppDeps {
   model: ModelProvider;
@@ -24,6 +27,8 @@ export interface AppDeps {
   /** The fixed part of the system prompt (prompts/system.md). */
   systemPrompt: string;
   titlePrompt: string;
+  /** The prompt of the query-understanding call (prompts/understand.md). */
+  understandPrompt: string;
   /** Folder holding the static chat page, relative to the working directory. */
   webRoot?: string;
 }
@@ -90,6 +95,7 @@ export function createApp(deps: AppDeps): Hono {
 
   // Body: {user_id, message, session_id?}. Without session_id a new session is
   // started. Replies as server-sent events:
+  //   recall {looked_for, found}                       memory was looked up for this message
   //   token {text}                                     one per piece of the answer, in order
   //   search {queries}                                 the agent started a round of web searches
   //   sources {sources: [{n, url, title}], failed}     that round finished; failed lists queries that got no answer
@@ -130,12 +136,49 @@ export function createApp(deps: AppDeps): Hono {
           return buildSessionHistory(turns);
         });
 
+        // Memory. Dates are resolved by code. Only a message with a date or a
+        // memory phrase is looked at further; everything else goes straight to the model.
+        const now = deps.clock.now();
+        const mentions = resolveDates(message, now, user.timezone);
+        let recalled: string | undefined;
+        let mayNotSearch = false;
+        if (mentions.length > 0 || hasMemoryCue(message)) {
+          // A plain "what did I ask on <date>" is settled by code; the rest asks the fast model.
+          const understood = await timed(
+            store,
+            turnId,
+            'understand',
+            () =>
+              understandPlainRecall(message, mentions) ??
+              understandQuery(deps.model, deps.understandPrompt, { message, now, timezone: user.timezone, mentions }),
+          );
+          if (understood.needsRecall) {
+            const found = await timed(store, turnId, 'recall', () =>
+              recall(store, {
+                userId: user.userId,
+                timezone: user.timezone,
+                ranges: understood.ranges,
+                topics: understood.topics,
+                today: localDay(now, user.timezone),
+              }),
+            );
+            recalled = formatRecalled(found, user.timezone);
+            mayNotSearch = !understood.needsSearch;
+            await stream.writeSSE({
+              event: 'recall',
+              data: JSON.stringify({ looked_for: describeLookup(found), found: found.turns.length }),
+            });
+          }
+        }
+
         const events = runAgent({
           model: deps.model,
           search: deps.search,
           metrics: store,
           turnId,
-          system: buildSystemPrompt(deps.systemPrompt, { now: deps.clock.now(), timezone: user.timezone }),
+          system: buildSystemPrompt(deps.systemPrompt, { now, timezone: user.timezone, recalled }),
+          // A question that is only about what was said before is answered from the records, without the web.
+          ...(mayNotSearch ? { maxRounds: 0 } : {}),
           messages: [...history, { role: 'user', content: message }],
           registry,
           signal: abort.signal,

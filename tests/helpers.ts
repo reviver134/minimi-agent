@@ -31,6 +31,7 @@ export function setup(
     clock,
     systemPrompt: 'You are a test.',
     titlePrompt: 'Write a title.',
+    understandPrompt: 'Understand the message.',
   });
   const signIn = async (name: string, timezone = 'Asia/Kolkata') => {
     const response = await app.request('/api/users', json({ name, timezone }));

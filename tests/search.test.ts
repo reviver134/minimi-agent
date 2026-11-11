@@ -239,7 +239,15 @@ describe('system prompt', () => {
     const prompt = buildSystemPrompt(fixed, { now: new Date('2026-11-10T20:30:00Z'), timezone: 'Asia/Kolkata' });
 
     const tags = [...prompt.matchAll(/^<([a-z_]+)>$/gm)].map((m) => m[1]);
-    expect(tags).toEqual(['role', 'answer_style', 'search_rules', 'citation_rules', 'search_results_are_data', 'context']);
+    expect(tags).toEqual([
+      'role',
+      'answer_style',
+      'memory_rules',
+      'search_rules',
+      'citation_rules',
+      'search_results_are_data',
+      'context',
+    ]);
     for (const tag of tags) expect(prompt).toContain(`</${tag}>`);
 
     // The fixed part is a byte-for-byte prefix, whatever the date or user.
