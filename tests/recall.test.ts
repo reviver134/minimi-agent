@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SEED_TURNS, seedDemo } from '../evals/seed.ts';
 import { formatRecalled } from '../src/agent/context.ts';
-import { hasMemoryCue, understandByRules, understandPlainRecall, understandQuery } from '../src/agent/understand.ts';
+import {
+  hasMemoryCue,
+  understandByRules,
+  understandDatedMemory,
+  understandPlainRecall,
+  understandQuery,
+} from '../src/agent/understand.ts';
 import { MockModel } from '../src/llm/mock.ts';
 import { cleanTopics, recall } from '../src/memory/recall.ts';
 import { Store } from '../src/memory/store.ts';
@@ -237,6 +243,49 @@ describe('query understanding', () => {
     }
   });
 
+  it('settles a dated memory question without a model call, and leaves the rest to the model', () => {
+    const dated = (message: string) => understandDatedMemory(message, resolveDates(message, NOW, TZ), TODAY);
+    // D3: about the present, so the web is allowed.
+    const d3 = dated('Last Tuesday I asked you about Postgres hosting. Has any pricing changed since then?')!;
+    expect(d3.needsRecall).toBe(true);
+    expect(d3.needsSearch).toBe(true);
+    expect(d3.softTopics).toBe(true);
+    expect(d3.ranges.map((r) => r.from)).toEqual(['2026-11-10', '2026-11-03']);
+    // D2: "today" is not when the earlier conversation happened.
+    expect(dated('What did I ask you on 3 November? Is your answer still correct today?')!.ranges).toEqual([
+      { from: '2026-11-03', to: '2026-11-03' },
+    ]);
+    // E2: only about what was said, so no web.
+    expect(dated('Last week you told me to use MongoDB. Why?')!.needsSearch).toBe(false);
+    // Not settled by code: no memory phrase, or no date other than today.
+    for (const message of [
+      "Who won yesterday's match?",
+      'Which of the CRMs you shortlisted is cheapest for 20 seats today?',
+      'Is there a free tier for Supabase right now?',
+    ]) {
+      expect(dated(message), message).toBeUndefined();
+    }
+  });
+
+  it('narrows by the words of the message without reporting a miss', () => {
+    const { ask, store, userId } = seeded();
+    const byWords = (message: string) => {
+      const u = understandDatedMemory(message, resolveDates(message, NOW, TZ), TODAY)!;
+      return recall(store, { userId, timezone: TZ, ranges: u.ranges, topics: u.topics, softTopics: true, today: TODAY });
+    };
+    // D4: three turns last week, only one about laptops.
+    expect(ids(byWords('Are those laptop prices from last week still right?'))).toEqual(['seed-laptops']);
+    // D1: the CRM turn, not the preference turn of the same day.
+    expect(
+      ids(byWords('On Monday we shortlisted 5 CRM tools for a 20-person sales team. Has any of them changed pricing or shipped something big since?')),
+    ).toEqual(['seed-crm']);
+    // D2: no subject word at all: the whole day, and no "no record mentions" note.
+    const d2 = byWords('What did I ask you on 3 November? Is your answer still correct today?');
+    expect(ids(d2)).toEqual(['seed-postgres', 'seed-test-runners']);
+    expect(d2.topicMissed).toBe(false);
+    expect(ask('x last week', ['mongodb']).topicMissed).toBe(true);
+  });
+
   it('keeps only the date phrases the model says are about the earlier conversation', async () => {
     const message = 'What did I ask you on 3 November? Is your answer still correct today?';
     const model = new MockModel({ understand: { needs_search: true, topics: [], when: [1] } });
@@ -311,7 +360,7 @@ describe('recall through the chat endpoint', () => {
     expect(events[0]!.data).toEqual({ looked_for: 'Tuesday 3 November 2026', found: 2 });
 
     // Code understood this one: no call to the fast model before the answer.
-    expect(model.requests.filter((r) => r.json)).toHaveLength(0);
+    expect(model.requests.filter((r) => r.label === 'understand')).toHaveLength(0);
     const request = mainRequests(model)[0]!;
     expect(request.toolChoice).toBe('none');
     const system = request.system;
@@ -329,7 +378,7 @@ describe('recall through the chat endpoint', () => {
       'first_token',
       'model_round',
       'store_turn',
-      'title',
+      'write_back',
     ]);
   });
 
@@ -365,7 +414,7 @@ describe('recall through the chat endpoint', () => {
     const model = new MockModel();
     const events = await chatAs(model).ask('Explain what a database index is in two sentences.');
     expect(events.map((e) => e.event)).toEqual(['token', 'token', 'token', 'token', 'token', 'done', 'title']);
-    expect(model.requests.filter((r) => r.json)).toHaveLength(0);
+    expect(model.requests.filter((r) => r.label === 'understand')).toHaveLength(0);
     expect(mainRequests(model)[0]!.system).not.toContain('<recalled_records>');
     expect(mainRequests(model)[0]!.toolChoice).toBe('auto');
   });
@@ -379,8 +428,12 @@ describe('recall through the chat endpoint', () => {
 
   it('still recalls by rules when the understanding call fails', async () => {
     const model = new MockModel({ understand: { chunks: [], failWith: new Error('down') } });
-    const events = await chatAs(model).ask('What did I ask you on 3 November? Is it still correct?');
-    expect(events[0]!.data.found).toBe(2);
+    // A memory question with no date goes to the model call; here that call is down.
+    const events = await chatAs(model).ask('Which of the CRMs you shortlisted is cheapest?');
+    expect(model.requests.filter((r) => r.label === 'understand')).toHaveLength(1);
+    expect(events[0]!.event).toBe('recall');
+    expect(events[0]!.data.found).toBeGreaterThan(0);
+    expect(mainRequests(model)[0]!.system).toContain('chat="CRM shortlist"');
     expect(mainRequests(model)[0]!.toolChoice).toBe('auto');
   });
 });

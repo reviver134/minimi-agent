@@ -39,7 +39,7 @@ describe('POST /api/chat', () => {
       'first_token',
       'model_round',
       'store_turn',
-      'title',
+      'write_back',
     ]);
     expect(steps.every((m) => m.status === 'ok')).toBe(true);
     const stream = steps.find((m) => m.step === 'model_round')!;

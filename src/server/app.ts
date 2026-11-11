@@ -5,14 +5,21 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { HISTORY_MAX_TURNS, buildSessionHistory, describeLookup, formatRecalled } from '../agent/context.ts';
-import { runAgent } from '../agent/loop.ts';
+import { MAX_SEARCH_ROUNDS, runAgent } from '../agent/loop.ts';
 import { buildSystemPrompt } from '../agent/prompt.ts';
-import { hasMemoryCue, understandPlainRecall, understandQuery } from '../agent/understand.ts';
+import { planRecheck, runRecheck } from '../agent/recheck.ts';
+import {
+  hasMemoryCue,
+  understandDatedMemory,
+  understandPlainRecall,
+  understandQuery,
+} from '../agent/understand.ts';
 import { type Source, SourceRegistry } from '../agent/webSearch.ts';
 import type { ModelProvider } from '../llm/provider.ts';
 import { recall } from '../memory/recall.ts';
+import type { AnswerRecord } from '../memory/records.ts';
 import { type Session, type Store, normaliseName } from '../memory/store.ts';
-import { makeTitle } from '../memory/title.ts';
+import { runWriteback } from '../memory/writeback.ts';
 import type { SearchProvider } from '../search/provider.ts';
 import { timed } from '../telemetry/timed.ts';
 import { type Clock, isTimezone } from '../temporal/clock.ts';
@@ -26,7 +33,8 @@ export interface AppDeps {
   clock: Clock;
   /** The fixed part of the system prompt (prompts/system.md). */
   systemPrompt: string;
-  titlePrompt: string;
+  /** The prompt of the write-back call (prompts/writeback.md). */
+  writebackPrompt: string;
   /** The prompt of the query-understanding call (prompts/understand.md). */
   understandPrompt: string;
   /** Folder holding the static chat page, relative to the working directory. */
@@ -101,6 +109,7 @@ export function createApp(deps: AppDeps): Hono {
   //   sources {sources: [{n, url, title}], failed}     that round finished; failed lists queries that got no answer
   //   done  {turn_id, session_id, ttft_ms, total_ms}   after the last token; the turn is stored
   //   title {session_id, title}                        after done, on a session's first turn
+  // After done the turn is filed for memory (answer record, profile, summary); that never delays or fails the reply.
   //   error {turn_id, message}                         if the model call failed; nothing is stored
   app.post('/api/chat', async (c) => {
     const receivedAt = performance.now();
@@ -141,15 +150,17 @@ export function createApp(deps: AppDeps): Hono {
         const now = deps.clock.now();
         const mentions = resolveDates(message, now, user.timezone);
         let recalled: string | undefined;
+        let recheck: string | undefined;
         let mayNotSearch = false;
         if (mentions.length > 0 || hasMemoryCue(message)) {
-          // A plain "what did I ask on <date>" is settled by code; the rest asks the fast model.
+          // A memory question with a date is settled by code; the rest asks the fast model.
           const understood = await timed(
             store,
             turnId,
             'understand',
             () =>
               understandPlainRecall(message, mentions) ??
+              understandDatedMemory(message, mentions, localDay(now, user.timezone)) ??
               understandQuery(deps.model, deps.understandPrompt, { message, now, timezone: user.timezone, mentions }),
           );
           if (understood.needsRecall) {
@@ -159,6 +170,7 @@ export function createApp(deps: AppDeps): Hono {
                 timezone: user.timezone,
                 ranges: understood.ranges,
                 topics: understood.topics,
+                softTopics: understood.softTopics,
                 today: localDay(now, user.timezone),
               }),
             );
@@ -168,6 +180,37 @@ export function createApp(deps: AppDeps): Hono {
               event: 'recall',
               data: JSON.stringify({ looked_for: describeLookup(found), found: found.turns.length }),
             });
+
+            // Re-check: the question is also about now, and the recalled answers
+            // left records of what they claimed. Search once per stored entity
+            // before the model is called, so it can compare then with now straight away.
+            if (understood.needsSearch) {
+              const records = found.turns
+                .map((t) => store.getAnswerRecord(t.turnId))
+                .filter((r): r is AnswerRecord => r !== undefined);
+              const plan = planRecheck(records, localDay(now, user.timezone).slice(0, 4));
+              if (plan.items.length > 0) {
+                await stream.writeSSE({
+                  event: 'search',
+                  data: JSON.stringify({ queries: plan.items.map((i) => i.query) }),
+                });
+                const checked = await runRecheck(plan, found.turns, user.timezone, {
+                  search: deps.search,
+                  metrics: store,
+                  turnId,
+                  registry,
+                  signal: abort.signal,
+                });
+                recheck = checked.block;
+                await stream.writeSSE({
+                  event: 'sources',
+                  data: JSON.stringify({
+                    sources: checked.outcomes.flatMap((o) => o.results.map(({ content: _c, ...s }) => sourceJson(s))),
+                    failed: checked.outcomes.filter((o) => o.status === 'failed').map((o) => o.query),
+                  }),
+                });
+              }
+            }
           }
         }
 
@@ -176,9 +219,17 @@ export function createApp(deps: AppDeps): Hono {
           search: deps.search,
           metrics: store,
           turnId,
-          system: buildSystemPrompt(deps.systemPrompt, { now, timezone: user.timezone, recalled }),
+          system: buildSystemPrompt(deps.systemPrompt, {
+            now,
+            timezone: user.timezone,
+            profile: user.profile,
+            summary: session?.summary,
+            recalled,
+            recheck,
+          }),
           // A question that is only about what was said before is answered from the records, without the web.
-          ...(mayNotSearch ? { maxRounds: 0 } : {}),
+          // A re-check has already used one of the three search rounds.
+          ...(mayNotSearch ? { maxRounds: 0 } : recheck ? { maxRounds: MAX_SEARCH_ROUNDS - 1 } : {}),
           messages: [...history, { role: 'user', content: message }],
           registry,
           signal: abort.signal,
@@ -223,8 +274,9 @@ export function createApp(deps: AppDeps): Hono {
       }
 
       // Write-back: starts after the last token, so it adds nothing to turn latency.
+      const storedAt = deps.clock.now();
       const stored = await timed(store, turnId, 'store_turn', () => {
-        const now = deps.clock.now();
+        const now = storedAt;
         const target = session ?? store.createSession(user.userId, now);
         store.addTurn({
           turnId,
@@ -247,14 +299,39 @@ export function createApp(deps: AppDeps): Hono {
         }),
       });
 
-      if (firstTurn) {
-        const title = await timed(store, turnId, 'title', async () => {
-          const made = await makeTitle(deps.model, deps.titlePrompt, message);
-          store.setSessionTitle(stored.sessionId, made.title);
-          return made.title;
+      // File the turn for memory. One fast-model call, after the reply is complete.
+      const filed = await timed(store, turnId, 'write_back', async () => {
+        const sessionNow = store.getSession(user.userId, stored.sessionId)!;
+        // A turn older than the history window that the summary does not cover yet.
+        const agingTurn =
+          store.countTurns(stored.sessionId) - HISTORY_MAX_TURNS > sessionNow.summaryTurns
+            ? store.turnAt(user.userId, stored.sessionId, sessionNow.summaryTurns)
+            : undefined;
+        const result = await runWriteback(deps.model, deps.writebackPrompt, {
+          userMessage: message,
+          answer,
+          sources: registry.all(),
+          asOf: localDay(storedAt, user.timezone),
+          firstTurn,
+          profile: store.getUser(user.userId)?.profile ?? user.profile,
+          ...(agingTurn ? { aging: { turn: agingTurn, summary: sessionNow.summary } } : {}),
         });
+        if (result.title) store.setSessionTitle(stored.sessionId, result.title);
+        if (result.record) {
+          store.setAnswerRecord({ turnId, ...result.record, createdAt: storedAt.toISOString() });
+        }
+        if (result.profile) store.setProfile(user.userId, result.profile);
+        if (result.summary && agingTurn) {
+          store.setSessionSummary(stored.sessionId, result.summary, sessionNow.summaryTurns + 1);
+        }
+        return result;
+      }).catch((err) => {
+        console.error(`[${turnId}] write-back failed: ${err instanceof Error ? err.message : err}`);
+        return undefined;
+      });
+      if (filed?.title) {
         await stream
-          .writeSSE({ event: 'title', data: JSON.stringify({ session_id: stored.sessionId, title }) })
+          .writeSSE({ event: 'title', data: JSON.stringify({ session_id: stored.sessionId, title: filed.title }) })
           .catch(() => {}); // the reader may have left; the title is stored either way
       }
     });

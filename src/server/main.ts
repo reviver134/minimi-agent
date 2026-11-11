@@ -39,7 +39,7 @@ const app = createApp({
   // CLOCK_OVERRIDE fixes "now" so the evals always run on the same day.
   clock: config.clockOverride ? fixedClock(config.clockOverride) : systemClock,
   systemPrompt: readPrompt('system.md'),
-  titlePrompt: readPrompt('title.md'),
+  writebackPrompt: readPrompt('writeback.md'),
   understandPrompt: readPrompt('understand.md'),
 });
 

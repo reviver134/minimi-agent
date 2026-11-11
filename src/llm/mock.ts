@@ -15,8 +15,10 @@ export interface MockScript {
 }
 
 export interface MockModelOptions extends MockScript {
-  /** What the 'fast' model does for a title. Defaults to a one-piece reply with no delay. */
+  /** The title the write-back call returns (its chunks, joined), with its delay or failure. Default "Mock title". */
   fast?: MockScript;
+  /** Other parts of the write-back reply: record, profile, summary. Or a whole script, to return bad output. */
+  writeback?: Record<string, unknown> | MockScript;
   /** The query-understanding reply (a JSON request to the 'fast' model). Defaults to: recall, no search, every date found, no topic. */
   understand?: Record<string, unknown> | MockScript;
   /** Decides each 'main' step from the request; n counts main steps from 0. Overrides the fixed script. */
@@ -33,8 +35,18 @@ const UNDERSTAND_DEFAULT = {
 };
 
 function understandScript(option: MockModelOptions['understand']): MockScript {
-  if (option && ('chunks' in option || 'failWith' in option || 'delayMs' in option)) return option as MockScript;
+  if (isScript(option)) return option;
   return { chunks: [JSON.stringify({ ...UNDERSTAND_DEFAULT, ...option })] };
+}
+
+const isScript = (option: object | undefined): option is MockScript =>
+  option !== undefined && ('chunks' in option || 'failWith' in option || 'delayMs' in option);
+
+function writebackScript(options: MockModelOptions): MockScript {
+  if (isScript(options.writeback)) return options.writeback;
+  const { chunks = ['Mock title'], ...rest } = options.fast ?? {};
+  const reply = { title: chunks.join('') || null, record: null, profile: null, summary: null, ...options.writeback };
+  return { ...rest, chunks: [JSON.stringify(reply)] };
 }
 
 /** A scripted model for tests: no network, no key. Records every request. */
@@ -49,9 +61,9 @@ export class MockModel implements ModelProvider {
     const script: MockScript =
       request.model !== 'fast'
         ? (this.options.respond?.(request, this.mainSteps++) ?? this.options)
-        : request.json
-          ? understandScript(this.options.understand)
-          : { chunks: ['Mock title'], ...this.options.fast };
+        : request.label === 'writeback'
+          ? writebackScript(this.options)
+          : understandScript(this.options.understand);
     const { chunks = ['Hello', ' from', ' the', ' mock', ' model.'], delayMs = 0, failWith } = script;
     const canCall = (request.tools?.length ?? 0) > 0 && request.toolChoice !== 'none';
     const searches = canCall ? (script.searches ?? []) : [];

@@ -42,7 +42,7 @@ Gemini's built-in Google Search grounding is not used: the agent needs control o
 
 ```
 users           user_id (generated), user_name (normalised, unique), timezone, profile_json, created_at
-sessions        session_id, user_id, title, created_at, updated_at
+sessions        session_id, user_id, title, created_at, updated_at, summary, summary_turns
 turns           turn_id, session_id, user_id, user_message, assistant_message, created_at (UTC), user_timezone
 answer_records  turn_id, topic, entities_json, claims_json, created_at
 sources         turn_id, n, url, title, published_at
@@ -282,6 +282,33 @@ Test set:
 | S5-T6 | Auto | Mock search shows one of 5 prices changed | Answer names that one as changed, with old and new value, and the other four as unchanged |
 | S5-T7 | Auto | "Keep answers short" said in session A | Profile updated; present in context in session B |
 | S5-T8 | Manual | Evals D1 to D5 and F1 to F3 | Pass as defined in `evals/questions.md` |
+
+Built on 2026-11-11 (session 5):
+
+- **One write-back call, not three.** After the `done` event one fast-model call returns JSON with up to four parts: `title` (first turn), `record` (an answer with sources, or a long one), `profile` (the message has a phrase such as "from now on", "my name is", "keep answers") and `summary` (a turn has left the 5-turn history). Code asks only for the parts a turn needs and makes no call when it needs none. This was chosen over separate calls because the free tier is short of requests.
+- **Answer records:** `{topic, entities: [{name, query}], claims: [{entity, attribute, value, asOf, sourceN}]}`. Code keeps a claim only if its value is found in the answer character for character, sets `asOf` to the turn's local day, and drops a citation number that is not among the turn's sources. A failed or malformed write-back leaves the turn stored and the user untouched.
+- **Re-check is driven by code.** When a memory question is also about now and the recalled turns have records, code searches once per stored entity (the stored `query` plus the current year, 3 results each, at most 6 in the round) before the model is called. The model receives a `<recheck>` section: a table of each stored claim with its value then, whether the search worked, and whether that value still appears in today's results, followed by the results. That counts as one of the three search rounds.
+- **"Still appears" is a hint, computed by code:** for a price the amount is looked for (`$19`, not matching inside `$199`), otherwise the whole value. "no" means look closer, not "changed".
+- **Dated memory questions are settled by code** (a date plus a memory phrase): recall by the date, narrow by the words of the message, allow the web if the message is about now. This removed a 3 to 6 s model call from every re-check. The understanding call remains for memory questions with no date (D5) and dated messages with no memory phrase.
+- **Profile:** up to 8 short statements in `users.profile_json`, shown to the model as `<user_profile>` right after the fixed prompt. The model returns the whole updated list; code cleans and caps it. It is taken from the user's message only, and only asked for when the message has a profile phrase, so web content cannot write to it.
+- **Session summary:** when a chat has more than 5 turns, the turn leaving the history is folded into `sessions.summary` by the write-back call and shown as `<earlier_in_this_chat>`. The trigger is the turn count, not the character cap. Old database files get the two new columns on open.
+
+Live results, 2026-11-11, `gemini-3.5-flash-lite`, clock fixed at 11 November 10:00 (S5-T8). The seeded "then" prices are made up, so "changed" here means "differs from the seed", not a real price change.
+
+| Eval | Result | First token |
+|---|---|---|
+| D1 CRM shortlist, changed since? | Pass: all 5 recalled, one round with a query per tool, per-tool then and now, cited | 3.7 s |
+| D2 3 November, still correct? | Pass: both questions listed, 6 items re-checked, old and new values where they differ | 4.9 s |
+| D3 Postgres hosting pricing | Pass: the 3 November turn, all 3 providers with stored and current price | 7.3 s |
+| D4 "those laptop prices from last week" | Pass: the 7 November turn from a vague reference, 3 prices re-checked | 11.5 s |
+| D5 cheapest CRM for 20 seats | Pass: 5 tools recalled, current prices, 20-seat arithmetic shown | 7.2 s |
+| F1 Postgres or MySQL, then "which has better JSON support?" | Pass: understood "which". It searched for the first message, which was not needed | 10.3 s, 12.8 s |
+| F2 password managers in a new chat | Pass: a table, short, per the stored profile | 10.3 s |
+| F3 "long detailed answers from now on" | Pass: profile became "Wants long detailed answers" and kept "Wants tables for comparisons"; the next chat's answer was long | 3.8 s, 3.5 s |
+
+Not verified: whether the current prices the model reported are right; only that each is cited to a page it was given. In the first D runs the model put markers such as "[recalled_records]" after old values; the re-check text now tells it not to, and that wording has not been re-run live.
+
+Latency: the re-check target (5 s) is met by D1 and D2 and missed by D3 to D5. With the understanding call gone, what is left is the searches (0.4 to 3.7 s for the slowest of a round) and one model call over 5,000 to 9,000 input tokens (3 to 8 s).
 
 ### Session 6: evals, hardening and docs
 

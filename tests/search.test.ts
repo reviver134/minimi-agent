@@ -296,7 +296,7 @@ describe('search through the chat endpoint', () => {
       'first_token:ok',
       'model_round:ok',
       'store_turn:ok',
-      'title:ok',
+      'write_back:ok',
     ]);
 
     const turns = await app.request(`/api/sessions/${done.session_id}/turns?user_id=${user.user_id}`);

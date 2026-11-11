@@ -12,7 +12,9 @@ export interface Understanding {
   topics: string[];
   /** Local-day ranges the earlier conversation may be in. Empty means no date was given. */
   ranges: DayRange[];
-  /** False when the model call failed and rules were used instead. */
+  /** True when the topics are just the words of the message, not a subject someone picked out. */
+  softTopics?: boolean;
+  /** False when code decided, or the model call failed and rules were used instead. */
   fromModel: boolean;
 }
 
@@ -50,6 +52,7 @@ export function understandByRules(message: string, mentions: DateMention[], toda
     needsSearch: true,
     // With a date, the date is enough. Without one, the words of the message are all there is to go on.
     topics: ranges.length > 0 ? [] : [message.replace(/\d+/g, ' ')],
+    softTopics: true,
     ranges,
     fromModel: false,
   };
@@ -76,6 +79,29 @@ export function understandPlainRecall(message: string, mentions: DateMention[]):
     needsSearch: false,
     topics: about ? [about] : [],
     ranges: mention.candidates,
+    fromModel: false,
+  };
+}
+
+/**
+ * A message with a memory phrase and a date ("Last Tuesday I asked you about
+ * Postgres hosting. Has any pricing changed since then?") is also settled by
+ * code: recall by the date, narrow by the words of the message, and allow the
+ * web if it asks about the present. What is left for the model call are
+ * memory questions with no date, and dated messages with no memory phrase.
+ */
+export function understandDatedMemory(message: string, mentions: DateMention[], today: string): Understanding | undefined {
+  if (!hasMemoryCue(message)) return undefined;
+  const dated = mentions.filter((m) => !isToday(m, today));
+  if (dated.length === 0) return undefined;
+  let words = message;
+  for (const m of mentions) words = words.replace(m.text, ' ');
+  return {
+    needsRecall: true,
+    needsSearch: ABOUT_NOW.test(message),
+    topics: [words.replace(/\d+/g, ' ')],
+    softTopics: true,
+    ranges: dated.flatMap((m) => m.candidates),
     fromModel: false,
   };
 }
@@ -120,6 +146,7 @@ export async function understandQuery(
     const text = await collectText(
       model.stream({
         model: 'fast',
+        label: 'understand',
         system: prompt,
         messages: [{ role: 'user', content }],
         json: understandingSchema,

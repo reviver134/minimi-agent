@@ -30,7 +30,7 @@ export function setup(
     store,
     clock,
     systemPrompt: 'You are a test.',
-    titlePrompt: 'Write a title.',
+    writebackPrompt: 'File the turn.',
     understandPrompt: 'Understand the message.',
   });
   const signIn = async (name: string, timezone = 'Asia/Kolkata') => {

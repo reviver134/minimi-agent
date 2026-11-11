@@ -3,9 +3,13 @@
 // The stored answers are what the agent "said then": plausible figures made
 // for the evals, not checked facts.
 import type { Source } from '../src/agent/webSearch.ts';
+import { buildRecord } from '../src/memory/records.ts';
 import type { Store } from '../src/memory/store.ts';
 
 export const SEED_USER = { name: 'demo', timezone: 'Asia/Kolkata' };
+
+/** What the preference turn of 9 November left in the profile. */
+export const SEED_PROFILE = ['Wants short answers', 'Wants tables for comparisons'];
 
 interface SeedTurn {
   turnId: string;
@@ -15,6 +19,12 @@ interface SeedTurn {
   question: string;
   answer: string;
   sources?: Omit<Source, 'n'>[];
+  /** The answer record, in the shape the write-back call returns it. */
+  record?: {
+    topic: string;
+    entities: { name: string; query: string }[];
+    claims: { entity: string; attribute: string; value: string; source_n: number | null }[];
+  };
 }
 
 export const SEED_TURNS: SeedTurn[] = [
@@ -39,6 +49,19 @@ export const SEED_TURNS: SeedTurn[] = [
       { url: 'https://supabase.com/pricing', title: 'Supabase pricing' },
       { url: 'https://render.com/pricing', title: 'Render pricing' },
     ],
+    record: {
+      topic: 'managed Postgres hosting',
+      entities: [
+        { name: 'Neon', query: 'Neon Postgres Launch plan price' },
+        { name: 'Supabase', query: 'Supabase Pro plan price' },
+        { name: 'Render', query: 'Render Postgres Basic-1gb price' },
+      ],
+      claims: [
+        { entity: 'Neon', attribute: 'Launch plan price', value: '$19/month', source_n: 1 },
+        { entity: 'Supabase', attribute: 'Pro plan price', value: '$25/month', source_n: 2 },
+        { entity: 'Render', attribute: 'Basic-1gb plan price', value: '$19/month', source_n: 3 },
+      ],
+    },
   },
   {
     turnId: 'seed-test-runners',
@@ -52,6 +75,15 @@ export const SEED_TURNS: SeedTurn[] = [
       '- Jest: the largest ecosystem, a good choice if your team already knows it, but slower and it needs configuration for ES modules.',
       '- The built-in node:test runner: no dependency at all, enough for small libraries, with fewer features for mocking and watch mode.',
     ].join('\n'),
+    record: {
+      topic: 'test runner for a new Node project',
+      entities: [
+        { name: 'Vitest', query: 'Vitest latest release Node test runner' },
+        { name: 'Jest', query: 'Jest ES modules support latest release' },
+        { name: 'node:test', query: 'Node.js built-in test runner features' },
+      ],
+      claims: [],
+    },
   },
   {
     turnId: 'seed-laptops',
@@ -74,6 +106,19 @@ export const SEED_TURNS: SeedTurn[] = [
       { url: 'https://www.lenovo.com/us/en/legion/', title: 'Lenovo Legion laptops' },
       { url: 'https://www.asus.com/laptops/for-home/zenbook/', title: 'ASUS Zenbook' },
     ],
+    record: {
+      topic: 'laptops for local model work under $2,000',
+      entities: [
+        { name: 'Apple MacBook Air 15-inch (M4, 24 GB)', query: 'MacBook Air 15-inch M4 24GB price' },
+        { name: 'Lenovo Legion 5i (RTX 5060, 32 GB)', query: 'Lenovo Legion 5i RTX 5060 32GB price' },
+        { name: 'ASUS Zenbook 14 OLED (Core Ultra 7, 32 GB)', query: 'ASUS Zenbook 14 OLED Core Ultra 7 32GB price' },
+      ],
+      claims: [
+        { entity: 'Apple MacBook Air 15-inch (M4, 24 GB)', attribute: 'price', value: '$1,599', source_n: 1 },
+        { entity: 'Lenovo Legion 5i (RTX 5060, 32 GB)', attribute: 'price', value: '$1,449', source_n: 2 },
+        { entity: 'ASUS Zenbook 14 OLED (Core Ultra 7, 32 GB)', attribute: 'price', value: '$1,199', source_n: 3 },
+      ],
+    },
   },
   {
     turnId: 'seed-crm',
@@ -100,6 +145,23 @@ export const SEED_TURNS: SeedTurn[] = [
       { url: 'https://www.salesforce.com/sales/pricing/', title: 'Salesforce Sales pricing' },
       { url: 'https://www.close.com/pricing', title: 'Close pricing' },
     ],
+    record: {
+      topic: 'CRM tools for a 20-person sales team',
+      entities: [
+        { name: 'HubSpot Sales Hub', query: 'HubSpot Sales Hub Starter price per seat' },
+        { name: 'Pipedrive', query: 'Pipedrive Growth plan price per seat' },
+        { name: 'Zoho CRM', query: 'Zoho CRM Professional price per user' },
+        { name: 'Salesforce', query: 'Salesforce Starter Suite price per user' },
+        { name: 'Close', query: 'Close CRM Growth plan price per seat' },
+      ],
+      claims: [
+        { entity: 'HubSpot Sales Hub', attribute: 'Starter price per seat per month', value: '$20', source_n: 1 },
+        { entity: 'Pipedrive', attribute: 'Growth price per seat per month', value: '$39', source_n: 2 },
+        { entity: 'Zoho CRM', attribute: 'Professional price per seat per month', value: '$23', source_n: 3 },
+        { entity: 'Salesforce', attribute: 'Starter Suite price per seat per month', value: '$25', source_n: 4 },
+        { entity: 'Close', attribute: 'Growth price per seat per month', value: '$99', source_n: 5 },
+      ],
+    },
   },
   {
     turnId: 'seed-preference',
@@ -115,6 +177,7 @@ export function seedDemo(store: Store): { userId: string; added: number } {
   const first = new Date(SEED_TURNS[0]!.at);
   const user = store.getOrCreateUser(SEED_USER.name, SEED_USER.timezone, first);
   if (store.hasTurn(SEED_TURNS[0]!.turnId)) return { userId: user.userId, added: 0 };
+  store.setProfile(user.userId, SEED_PROFILE);
 
   const sessions = new Map<string, string>();
   for (const turn of SEED_TURNS) {
@@ -136,6 +199,12 @@ export function seedDemo(store: Store): { userId: string; added: number } {
       },
       (turn.sources ?? []).map((s, i) => ({ n: i + 1, ...s })),
     );
+    if (turn.record) {
+      // Through the same check as live records: a value that is not in the answer would be dropped.
+      const sources = (turn.sources ?? []).map((s, i) => ({ n: i + 1, ...s }));
+      const record = buildRecord(turn.record, { answer: turn.answer, sources, asOf: turn.at.slice(0, 10) });
+      if (record) store.setAnswerRecord({ turnId: turn.turnId, ...record, createdAt: at.toISOString() });
+    }
   }
   return { userId: user.userId, added: SEED_TURNS.length };
 }

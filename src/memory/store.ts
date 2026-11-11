@@ -6,12 +6,15 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Source } from '../agent/webSearch.ts';
 import type { Metric, MetricsSink } from '../telemetry/timed.ts';
+import type { AnswerRecord } from './records.ts';
 import { SCHEMA } from './schema.ts';
 
 export interface User {
   userId: string;
   userName: string;
   timezone: string;
+  /** Short statements about the user and how they like answers, kept across chats. */
+  profile: string[];
 }
 
 export interface Session {
@@ -20,6 +23,9 @@ export interface Session {
   title: string | null;
   createdAt: string;
   updatedAt: string;
+  /** What was said before the turns still sent as history, and how many turns it covers. */
+  summary: string | null;
+  summaryTurns: number;
 }
 
 export interface Turn {
@@ -53,9 +59,22 @@ export function normaliseName(name: string): string {
   return name.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-const USER = 'user_id AS userId, user_name AS userName, timezone';
+const USER = 'user_id AS userId, user_name AS userName, timezone, profile_json AS profileJson';
 const SESSION =
-  'session_id AS sessionId, user_id AS userId, title, created_at AS createdAt, updated_at AS updatedAt';
+  'session_id AS sessionId, user_id AS userId, title, created_at AS createdAt, updated_at AS updatedAt, ' +
+  'summary, summary_turns AS summaryTurns';
+
+function toUser(row: unknown): User | undefined {
+  if (!row) return undefined;
+  const { profileJson, ...user } = row as Omit<User, 'profile'> & { profileJson: string };
+  let profile: unknown;
+  try {
+    profile = JSON.parse(profileJson);
+  } catch {
+    profile = [];
+  }
+  return { ...user, profile: Array.isArray(profile) ? profile.filter((p) => typeof p === 'string') : [] };
+}
 const TURN =
   'turn_id AS turnId, session_id AS sessionId, user_id AS userId, user_message AS userMessage, ' +
   'assistant_message AS assistantMessage, created_at AS createdAt, user_timezone AS userTimezone';
@@ -74,6 +93,11 @@ export class Store implements MetricsSink {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    // Columns added after the first release; CREATE TABLE IF NOT EXISTS does not add them to an old file.
+    const columns = this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[];
+    if (!columns.some((c) => c.name === 'summary')) {
+      this.db.exec('ALTER TABLE sessions ADD COLUMN summary TEXT; ALTER TABLE sessions ADD COLUMN summary_turns INTEGER NOT NULL DEFAULT 0;');
+    }
   }
 
   close(): void {
@@ -92,11 +116,15 @@ export class Store implements MetricsSink {
          ON CONFLICT (user_name) DO UPDATE SET timezone = excluded.timezone`,
       )
       .run(randomUUID(), userName, timezone, now.toISOString());
-    return this.db.prepare(`SELECT ${USER} FROM users WHERE user_name = ?`).get(userName) as unknown as User;
+    return toUser(this.db.prepare(`SELECT ${USER} FROM users WHERE user_name = ?`).get(userName))!;
   }
 
   getUser(userId: string): User | undefined {
-    return this.db.prepare(`SELECT ${USER} FROM users WHERE user_id = ?`).get(userId) as User | undefined;
+    return toUser(this.db.prepare(`SELECT ${USER} FROM users WHERE user_id = ?`).get(userId));
+  }
+
+  setProfile(userId: string, profile: string[]): void {
+    this.db.prepare('UPDATE users SET profile_json = ? WHERE user_id = ?').run(JSON.stringify(profile), userId);
   }
 
   // --- sessions ---
@@ -107,7 +135,7 @@ export class Store implements MetricsSink {
     this.db
       .prepare('INSERT INTO sessions (session_id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
       .run(sessionId, userId, title, at, at);
-    return { sessionId, userId, title, createdAt: at, updatedAt: at };
+    return { sessionId, userId, title, createdAt: at, updatedAt: at, summary: null, summaryTurns: 0 };
   }
 
   getSession(userId: string, sessionId: string): Session | undefined {
@@ -125,6 +153,12 @@ export class Store implements MetricsSink {
 
   setSessionTitle(sessionId: string, title: string): void {
     this.db.prepare('UPDATE sessions SET title = ? WHERE session_id = ?').run(title, sessionId);
+  }
+
+  setSessionSummary(sessionId: string, summary: string, turns: number): void {
+    this.db
+      .prepare('UPDATE sessions SET summary = ?, summary_turns = ? WHERE session_id = ?')
+      .run(summary, turns, sessionId);
   }
 
   // --- turns ---
@@ -160,6 +194,19 @@ export class Store implements MetricsSink {
     return rows.map(({ publishedAt, ...rest }) => ({ ...rest, ...(publishedAt ? { publishedAt } : {}) }));
   }
 
+  countTurns(sessionId: string): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM turns WHERE session_id = ?').get(sessionId) as { n: number }).n;
+  }
+
+  /** The session's turn at this position, counting from 0 at the oldest. */
+  turnAt(userId: string, sessionId: string, index: number): Turn | undefined {
+    return this.db
+      .prepare(
+        `SELECT ${TURN} FROM turns WHERE user_id = ? AND session_id = ? ORDER BY created_at, rowid LIMIT 1 OFFSET ?`,
+      )
+      .get(userId, sessionId, index) as Turn | undefined;
+  }
+
   hasTurn(turnId: string): boolean {
     return this.db.prepare('SELECT 1 FROM turns WHERE turn_id = ?').get(turnId) !== undefined;
   }
@@ -178,6 +225,28 @@ export class Store implements MetricsSink {
       )
       .all(userId, sessionId, limit) as unknown as Turn[];
     return newestFirst.reverse();
+  }
+
+  // --- answer records ---
+
+  setAnswerRecord(record: AnswerRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO answer_records (turn_id, topic, entities_json, claims_json, created_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (turn_id) DO UPDATE SET topic = excluded.topic, entities_json = excluded.entities_json,
+           claims_json = excluded.claims_json`,
+      )
+      .run(record.turnId, record.topic, JSON.stringify(record.entities), JSON.stringify(record.claims), record.createdAt);
+  }
+
+  getAnswerRecord(turnId: string): AnswerRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT turn_id AS turnId, topic, entities_json AS entities, claims_json AS claims, created_at AS createdAt
+         FROM answer_records WHERE turn_id = ?`,
+      )
+      .get(turnId) as { turnId: string; topic: string; entities: string; claims: string; createdAt: string } | undefined;
+    return row && { ...row, entities: JSON.parse(row.entities), claims: JSON.parse(row.claims) };
   }
 
   // --- recall: always by user_id, never by session ---

@@ -1,4 +1,5 @@
-// Tables in use so far. answer_records arrives with session 5 (docs/PLAN.md, data model).
+// The tables (docs/PLAN.md, data model). Raw turns are the source of truth;
+// answer_records, the profile and session summaries are derived from them.
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   user_id      TEXT PRIMARY KEY,
@@ -37,6 +38,15 @@ CREATE TABLE IF NOT EXISTS sources (
   title        TEXT NOT NULL,
   published_at TEXT,
   PRIMARY KEY (turn_id, n)
+);
+
+-- The checkable content of an answer: entities and claims {entity, attribute, value, asOf, sourceN}.
+CREATE TABLE IF NOT EXISTS answer_records (
+  turn_id       TEXT PRIMARY KEY REFERENCES turns(turn_id),
+  topic         TEXT NOT NULL,
+  entities_json TEXT NOT NULL,
+  claims_json   TEXT NOT NULL,
+  created_at    TEXT NOT NULL
 );
 
 -- No foreign key: a failed turn has metrics but no turns row.

@@ -16,6 +16,8 @@ export const SEARCH_LIMITS = {
   maxQueries: 6,
   /** A search that takes longer than this is reported as failed. */
   timeoutMs: 8000,
+  /** Results kept per query. */
+  resultsPerQuery: 5,
   /** Characters of page text kept per result. */
   contentChars: 1500,
 };
@@ -130,7 +132,7 @@ export async function runWebSearch(queries: string[], deps: WebSearchDeps): Prom
   return settled.map((item): QueryOutcome => {
     if (!item.results) return { query: item.query, status: 'failed', error: item.error, results: [] };
     const results: QueryOutcome['results'] = [];
-    for (const r of item.results) {
+    for (const r of item.results.slice(0, limits.resultsPerQuery)) {
       const source = deps.registry.add(r.url, r.title, r.publishedAt);
       if (source) results.push({ ...source, content: cut(r.content, limits.contentChars) });
     }

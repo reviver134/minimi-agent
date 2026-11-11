@@ -38,6 +38,8 @@ export interface StreamRequest {
   messages: AgentMessage[];
   /** Tools the model knows about. Each takes {queries: string[]}. */
   tools?: ToolSpec[];
+  /** What the call is for; used by logs and by the mock. */
+  label?: 'understand' | 'writeback';
   /** Make the reply JSON that fits this zod schema. The caller still parses and checks it. */
   json?: unknown;
   /** 'none' keeps the tools declared but makes the model answer in text. Default 'auto'. */

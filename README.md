@@ -2,7 +2,7 @@
 
 A chat agent with one tool, web search. It remembers dated conversations and can re-check its old answers against the live web.
 
-Status: sessions 1 to 4 of 6 are built. It is a streaming chat with Gemini that searches the web (Tavily) when a question needs fresh facts, cites its sources by number, keeps each person's chats in SQLite under their name, and recalls past conversations by date and topic ("what did I ask you last Tuesday about Postgres?"). Structured answer records, the re-check flow and the user profile are not built yet.
+Status: sessions 1 to 5 of 6 are built. It is a streaming chat with Gemini that searches the web (Tavily) when a question needs fresh facts, cites its sources by number, keeps each person's chats in SQLite under their name, recalls past conversations by date and topic ("what did I ask you last Tuesday about Postgres?"), re-checks an old answer against the web ("has any of that pricing changed?") and remembers what you tell it about yourself across chats. The eval runner, error hardening and `DESIGN.md` are still to come.
 
 - Plan, design principles and per-session test sets: [docs/PLAN.md](docs/PLAN.md)
 - Evaluation questions: [evals/questions.md](evals/questions.md)

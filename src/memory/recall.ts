@@ -11,6 +11,8 @@ export interface RecallQuery {
   ranges: DayRange[];
   /** Subject keywords. Empty means any topic. */
   topics: string[];
+  /** The topics are only the words of the message: use them to narrow, but do not report a miss. */
+  softTopics?: boolean;
   /** Today's local day, to tell future ranges apart. */
   today: string;
   /** Most turns to return. */
@@ -105,7 +107,7 @@ export function recall(store: Store, query: RecallQuery): RecallResult {
   if (topics.length > 0) {
     const onTopic = turns.filter((turn) => hits(turn, topics) > 0);
     if (onTopic.length > 0) turns = onTopic;
-    else topicMissed = true;
+    else topicMissed = !query.softTopics;
   }
   const truncated = turns.length > limit;
   return { ...base, turns: truncated ? turns.slice(-limit) : turns, topicMissed, truncated };
