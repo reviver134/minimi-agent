@@ -332,6 +332,41 @@ Test set:
 | S6-T5 | Manual | Fresh clone on a clean machine or folder | `npm install` then `npm run dev` works with only `.env` filled in |
 | S6-T6 | Manual | Latency report | Meets the targets below, or the gap is explained in `DESIGN.md` |
 | S6-T7 | Manual | `DESIGN.md` | One page; covers how it works, why, what was rejected, another week |
+Built on 2026-11-11 (session 6):
+
+- **Eval runner** (`npm run evals`, `evals/run.ts`, `evals/runner.ts`, `evals/cases.ts`): every question of `evals/questions.md` on a fresh seeded in-memory database with the clock fixed, through the real chat endpoint in-process. Checks are code: which turns were recalled, how many search rounds and queries, patterns the answer must or must not match, citations, table, length, profile. What still needs a person is listed per case as "still to judge". It stops and says so if the key's request limit is reached. Write-back is skipped where a case does not need it, to save requests.
+- **S6-T1 is split:** the offline part (in `npm test`) runs the runner with mocks and checks what code decides for every dated case; the live part is `npm run evals`. Failures are listed in `DESIGN.md`.
+- **Search down:** a round in which every search failed ends searching (`toolChoice: none`) and tells the model to say it could not check the web. A re-check with search down still answers from the stored record.
+- **Model errors:** the user gets a message by kind (request limit, busy, timeout, key rejected, other), never the provider's text. Nothing of a failed turn is stored.
+- **Keys:** every log line passes through redaction of the configured keys. A test starts the real server with made-up keys, asks a question, and checks stdout, stderr and the database files.
+- **Other:** unexpected route errors return JSON; a port in use gives a plain message; `npm run dev` no longer prints the experimental-SQLite warning.
+- **Tuning:** search results cut from 5 of 1,500 characters to 4 of 1,200 (3 in a re-check). The effect was not measured on its own. `THINKING_LEVEL` stays `low`: `minimal` showed no clear gain in session 4 and was not tried again.
+- **Fresh-clone check (S6-T5):** `git clone` to an empty folder on the same machine, `npm install`, `.env` copied in, 91 tests pass, `npm run dev` serves the page and its files. Not tried on a second machine.
+- **Not done: publishing to GitHub.** It waits for the owner's go-ahead.
+
+Live eval runs, 2026-11-11, `gemini-3.5-flash-lite`:
+
+| Run | Passed | Missed |
+|---|---|---|
+| 1, before the prompt changes | 28 of 31 | B1, B5 (no as-of date), G4 (searched before asking) |
+| Re-run of B1, B4, B5, G4, A1, B2 after tightening two prompt rules | 6 of 6 | |
+| 2, full, with the new prompt and caps (`evals/results/latest.md`) | 27 of 31 | B3 (no official page cited), D2 (skipped the second question), D5 (recalled a laptop turn too; a bug in the fallback), F3 (answer not long) |
+| Re-run of D2, D5, F3, B3 after the D5 fix and two instruction changes | 3 of 4 | B3: the model returned "high demand", so the turn failed |
+
+The misses move between runs: the small model does not behave the same way twice. B3 has not passed since the first run.
+
+Latency report (S6-T6), median time to first token of 3 runs, from run 2:
+
+| ID | Path | Target | Median | Runs | Met |
+|---|---|---|---|---|---|
+| H1 | No search | 1.5 s | 1.2 s | 5.2, 1.1, 1.2 s | yes |
+| H2 | Recall only | 2 s | 4.1 s | 1.0, 4.1, 18.8 s | no |
+| H3 | Single search | 5 s | 6.3 s | 4.4, 9.8, 6.3 s | no |
+| H4 | Re-check, 5 entities | 5 s | 4.3 s | 4.6, 4.3, 2.9 s | yes |
+| H5 | Recall query alone | 20 ms | 0.9 ms | 18 samples | yes |
+
+In run 1 the medians were 3.5 s, 3.5 s, 10.9 s and 4.6 s, so H1 was missed then. The gap is the model call: the recall-only path makes exactly one, and it took between 1.0 and 18.8 s for the same request.
+
 ## Latency targets
 
 Starting targets, to be tuned once real numbers exist:

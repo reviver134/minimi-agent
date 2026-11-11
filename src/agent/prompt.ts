@@ -34,7 +34,15 @@ export function buildSystemPrompt(fixed: string, context: PromptContext): string
   const profile = context.profile ?? [];
   return [
     fixed.trim(),
-    ...(profile.length > 0 ? ['', '<user_profile>', ...profile.map((p) => `- ${p}`), '</user_profile>'] : []),
+    ...(profile.length > 0
+      ? [
+          '',
+          '<user_profile>',
+          'What this user has told you about themselves and how they want answers. Where it differs from answer_style, do what it says.',
+          ...profile.map((p) => `- ${p}`),
+          '</user_profile>',
+        ]
+      : []),
     '',
     '<context>',
     `Today is ${localDate(context.now, context.timezone)}.`,

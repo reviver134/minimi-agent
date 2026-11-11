@@ -367,7 +367,7 @@ describe('user profile', () => {
     const b = await readEvents(await chat({ user_id: user.user_id, message: 'Compare three password managers.' }));
     expect(b.find((e) => e.event === 'done')!.data.session_id).not.toBe(sessionA);
     const system = model.requests.filter((r) => r.model === 'main').at(-1)!.system;
-    expect(system).toContain('<user_profile>\n- Wants short answers\n</user_profile>');
+    expect(system).toMatch(/<user_profile>\n[^\n]+do what it says\.\n- Wants short answers\n<\/user_profile>/);
     // After the fixed text, before the date: the order that keeps the prompt cacheable.
     expect(system.startsWith('You are a test.\n\n<user_profile>')).toBe(true);
     expect(system.indexOf('<user_profile>')).toBeLessThan(system.indexOf('<context>'));

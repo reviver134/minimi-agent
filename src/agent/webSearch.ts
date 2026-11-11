@@ -17,9 +17,9 @@ export const SEARCH_LIMITS = {
   /** A search that takes longer than this is reported as failed. */
   timeoutMs: 8000,
   /** Results kept per query. */
-  resultsPerQuery: 5,
+  resultsPerQuery: 4,
   /** Characters of page text kept per result. */
-  contentChars: 1500,
+  contentChars: 1200,
 };
 
 export interface Source {

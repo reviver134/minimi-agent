@@ -84,11 +84,13 @@ export function recall(store: Store, query: RecallQuery): RecallResult {
   // No date: by topic alone, or failing that the most recent turns.
   if (ranges.length === 0) {
     if (topics.length === 0) return { ...base, turns: store.latestTurns(query.userId, 5).reverse() };
-    const found = store
+    let found = store
       .turnsMentioning(query.userId, topics.map(stem))
       .map((turn) => ({ turn, score: hits(turn, topics) }))
       .filter((f) => f.score > 0)
       .sort((a, b) => b.score - a.score || b.turn.createdAt.localeCompare(a.turn.createdAt));
+    // Words taken straight from a message match many turns by chance ("cheapest"): keep the best matches only.
+    if (query.softTopics && found.length > 0) found = found.filter((f) => f.score === found[0]!.score);
     const best = found.slice(0, Math.min(limit, 6)).map((f) => f.turn);
     best.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return { ...base, turns: best, truncated: found.length > best.length };
@@ -108,8 +110,11 @@ export function recall(store: Store, query: RecallQuery): RecallResult {
 
   let topicMissed = false;
   if (topics.length > 0) {
-    const onTopic = turns.filter((turn) => hits(turn, topics) > 0);
-    if (onTopic.length > 0) turns = onTopic;
+    const scores = new Map(turns.map((turn) => [turn.turnId, hits(turn, topics)]));
+    const best = Math.max(...scores.values());
+    // A subject someone picked out keeps every turn that mentions it; bare message words keep the best matches only.
+    const onTopic = turns.filter((turn) => (query.softTopics ? scores.get(turn.turnId) === best : scores.get(turn.turnId)! > 0));
+    if (best > 0) turns = onTopic;
     else topicMissed = !query.softTopics;
   }
   const truncated = turns.length > limit;

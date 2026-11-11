@@ -279,6 +279,17 @@ describe('query understanding', () => {
     expect(
       ids(byWords('On Monday we shortlisted 5 CRM tools for a 20-person sales team. Has any of them changed pricing or shipped something big since?')),
     ).toEqual(['seed-crm']);
+    // D5 when the understanding call is down: no date, only the words of the message.
+    // "cheapest" also appears in the laptop answer; the CRM turn matches more words and wins.
+    const d5 = recall(store, {
+      userId,
+      timezone: TZ,
+      ranges: [],
+      topics: ['Which of the CRMs you shortlisted is cheapest for seats today?'],
+      softTopics: true,
+      today: TODAY,
+    });
+    expect(ids(d5)).toEqual(['seed-crm']);
     // D2: no subject word at all: the whole day, and no "no record mentions" note.
     const d2 = byWords('What did I ask you on 3 November? Is your answer still correct today?');
     expect(ids(d2)).toEqual(['seed-postgres', 'seed-test-runners']);

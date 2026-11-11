@@ -28,6 +28,9 @@ export function userMessageFor(err: unknown): string {
   if (/quota|rate.?limit|resource_exhausted|\b429\b|too many requests/i.test(text)) {
     return "The model's request limit has been reached. Wait a little and try again, or check the quota of your Gemini key.";
   }
+  if (/high demand|overloaded|unavailable|\b503\b|try again later/i.test(text)) {
+    return 'The model is busy right now. Please try again in a moment.';
+  }
   if (/sent nothing within|timed? ?out|timeout|aborted/i.test(text)) {
     return 'The model took too long to answer. Please try again.';
   }

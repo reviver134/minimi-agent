@@ -91,7 +91,7 @@ export async function runRecheck(
 
   const lines = [
     '<recheck>',
-    `The user is asking whether what you said on ${days.join(' and ')} still holds. The app has already searched once for each item you named then; the results are below. Go through every item in the table: give the value then with its date, the value now with the [n] of the result it comes from, and say plainly whether it changed, did not change, or could not be checked. Only today's results get a citation: write the value then as plain text with nothing in brackets after it. Do not search again for an item that already has results.`,
+    `The user is asking whether what you said on ${days.join(' and ')} still holds. The app has already searched once for each item you named then; the results are below. First name every question in <recalled_records>, including any that has no row in the table. Then go through every item in the table: give the value then with its date, the value now with the [n] of the result it comes from, and say plainly whether it changed, did not change, or could not be checked. Only today's results get a citation: write the value then as plain text with nothing in brackets after it. Do not search again for an item that already has results.`,
     '',
     '| Item | What | Value then | Search | Value then still appears in today\'s results |',
     '|---|---|---|---|---|',

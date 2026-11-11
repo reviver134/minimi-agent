@@ -117,6 +117,7 @@ describe('model errors', () => {
     const cases: [Error, RegExp][] = [
       [new Error('You exceeded your current quota, please check your plan'), /request limit has been reached/],
       [new Error('429 Too Many Requests'), /request limit has been reached/],
+      [new Error('This model is currently experiencing high demand. Please try again later.'), /busy right now/],
       [new Error('model gemini-x sent nothing within 20 s'), /took too long/],
       [new Error('API key not valid. Please pass a valid API key.'), /rejected the API key/],
       [new Error('internal: secret-detail-xyz'), /could not answer/],
