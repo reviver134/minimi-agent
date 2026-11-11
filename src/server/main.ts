@@ -6,7 +6,7 @@ import { ConfigError, loadConfig } from '../config.ts';
 import { GeminiModel } from '../llm/gemini.ts';
 import { Store } from '../memory/store.ts';
 import { TavilySearch } from '../search/tavily.ts';
-import { registerSecrets } from '../telemetry/log.ts';
+import { logInfo, registerSecrets } from '../telemetry/log.ts';
 import { fixedClock, systemClock } from '../temporal/clock.ts';
 import { createApp } from './app.ts';
 
@@ -43,6 +43,7 @@ const app = createApp({
   clock: config.clockOverride ? fixedClock(config.clockOverride) : systemClock,
   systemPrompt: readPrompt('system.md'),
   writebackPrompt: readPrompt('writeback.md'),
+  log: logInfo,
   understandPrompt: readPrompt('understand.md'),
 });
 

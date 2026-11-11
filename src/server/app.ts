@@ -21,7 +21,7 @@ import type { AnswerRecord } from '../memory/records.ts';
 import { type Session, type Store, normaliseName } from '../memory/store.ts';
 import { runWriteback } from '../memory/writeback.ts';
 import type { SearchProvider } from '../search/provider.ts';
-import { logError, userMessageFor } from '../telemetry/log.ts';
+import { logError, turnLine, userMessageFor } from '../telemetry/log.ts';
 import { timed } from '../telemetry/timed.ts';
 import { type Clock, isTimezone } from '../temporal/clock.ts';
 import { localDay, resolveDates } from '../temporal/dates.ts';
@@ -38,6 +38,8 @@ export interface AppDeps {
   writebackPrompt: string;
   /** The prompt of the query-understanding call (prompts/understand.md). */
   understandPrompt: string;
+  /** Where the one-line summary of each finished turn goes. Left out in tests. */
+  log?: (line: string) => void;
   /** Folder holding the static chat page, relative to the working directory. */
   webRoot?: string;
 }
@@ -306,6 +308,8 @@ export function createApp(deps: AppDeps): Hono {
           total_ms: Math.round(totalMs),
         }),
       });
+
+      deps.log?.(turnLine(turnId, ttftMs, totalMs, store.listMetrics(turnId)));
 
       // File the turn for memory. One fast-model call, after the reply is complete.
       const filed = await timed(store, turnId, 'write_back', async () => {

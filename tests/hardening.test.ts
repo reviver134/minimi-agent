@@ -9,7 +9,7 @@ import { seedDemo } from '../evals/seed.ts';
 import { MockModel } from '../src/llm/mock.ts';
 import type { StreamRequest, ToolResultsMessage } from '../src/llm/provider.ts';
 import { MockSearch } from '../src/search/mock.ts';
-import { logError, redact, registerSecrets, userMessageFor } from '../src/telemetry/log.ts';
+import { logError, redact, registerSecrets, turnLine, userMessageFor } from '../src/telemetry/log.ts';
 import { fixedClock } from '../src/temporal/clock.ts';
 import { readEvents, setup } from './helpers.ts';
 
@@ -144,6 +144,22 @@ describe('model errors', () => {
 });
 
 describe('API keys stay out of logs and the database', () => {
+  it('logs one line per turn with step timings and nothing of the conversation', () => {
+    const step = (name: string, durationMs: number) => ({ turnId: 't', step: name, startedMs: 0, durationMs, status: 'ok' as const });
+    const line = turnLine('abcdef12-3456', 3658.2, 4290.4, [
+      step('build_context', 0.2),
+      step('recall', 1.6),
+      step('search', 725),
+      step('search', 610),
+      step('first_token', 3658),
+      step('model_round', 3466),
+      step('store_turn', 13),
+    ]);
+    expect(line).toBe(
+      '[turn abcdef12] ok first_token=3658ms total=4290ms | build_context 0ms | recall 2ms | search x2 725ms | model_round 3466ms | store_turn 13ms',
+    );
+  });
+
   it('redacts a key that a provider echoes back in an error', () => {
     registerSecrets(['tvly-FAKE-KEY-0123456789', undefined, 'abc']);
     expect(redact('401 for key tvly-FAKE-KEY-0123456789 (tvly-FAKE-KEY-0123456789)')).toBe('401 for key [redacted] ([redacted])');

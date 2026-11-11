@@ -66,6 +66,15 @@ npm run evals
 
 The last run is in [evals/results/latest.md](evals/results/latest.md), with every answer.
 
+## Design choices
+
+The full reasoning is in [DESIGN.md](DESIGN.md). The choices people ask about most:
+
+- **No Redis or other cache.** This serves one person or a small group from one machine. Recall is a single indexed SQLite query that takes about 1 ms, so there is nothing slow of our own to cache; the time goes to the model and the search provider, whose answers must be fresh.
+- **No microservices.** For the same reason it is one process: the API, the agent, the store and the page. The parts are still separate modules behind interfaces (model, search, clock, store), so any of them could be moved out later without touching the rest.
+- **No RAG memory and no memory tool.** The brief allows the agent exactly one tool, and that tool is web search. So the agent cannot call a retrieval tool or manage its own memory. Instead, code looks up past conversations by date and topic words before the model is called and hands them over as context. With a second tool, embedding-based retrieval or agent-managed memory would let the model search its history itself and would probably find loosely worded references ("that database comparison") that keyword matching misses. We expect that would improve recall accuracy; we have not measured it.
+- **Logging throughout.** Every step of every turn (context, understanding, recall, each search, each model round, storing, write-back) is timed and written to the `turn_metrics` table against the turn's id. The server prints one line per finished turn with those timings, and one line per failure with its cause. Logs never contain the message, the answer or an API key: every line passes through redaction of the configured keys, and a test checks this against the running server.
+
 ## Layout
 
 ```
