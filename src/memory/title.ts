@@ -1,5 +1,5 @@
 // A short session title, made by the fast model after the first reply.
-import type { ModelProvider } from '../llm/provider.ts';
+import { type ModelProvider, collectText } from '../llm/provider.ts';
 
 const MAX_TITLE_CHARS = 60;
 
@@ -16,13 +16,13 @@ export async function makeTitle(
   userMessage: string,
 ): Promise<{ title: string; fromModel: boolean }> {
   try {
-    const result = model.streamText({
-      model: 'fast',
-      system: prompt,
-      messages: [{ role: 'user', content: userMessage.slice(0, 1000) }],
-    });
-    let text = '';
-    for await (const piece of result.textStream) text += piece;
+    const text = await collectText(
+      model.stream({
+        model: 'fast',
+        system: prompt,
+        messages: [{ role: 'user', content: userMessage.slice(0, 1000) }],
+      }),
+    );
     const title = tidy(text);
     if (title) return { title, fromModel: true };
   } catch (err) {

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { Source } from '../agent/webSearch.ts';
 import type { Metric, MetricsSink } from '../telemetry/timed.ts';
 import { SCHEMA } from './schema.ts';
 
@@ -118,15 +119,35 @@ export class Store implements MetricsSink {
 
   // --- turns ---
 
-  addTurn(turn: NewTurn): void {
+  /** Stores a finished turn and the sources it was shown, together or not at all. */
+  addTurn(turn: NewTurn, sources: Source[] = []): void {
     const at = turn.createdAt.toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO turns (turn_id, session_id, user_id, user_message, assistant_message, created_at, user_timezone)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(turn.turnId, turn.sessionId, turn.userId, turn.userMessage, turn.assistantMessage, at, turn.userTimezone);
-    this.db.prepare('UPDATE sessions SET updated_at = ? WHERE session_id = ?').run(at, turn.sessionId);
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO turns (turn_id, session_id, user_id, user_message, assistant_message, created_at, user_timezone)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(turn.turnId, turn.sessionId, turn.userId, turn.userMessage, turn.assistantMessage, at, turn.userTimezone);
+      const addSource = this.db.prepare(
+        'INSERT INTO sources (turn_id, n, url, title, published_at) VALUES (?, ?, ?, ?, ?)',
+      );
+      for (const s of sources) addSource.run(turn.turnId, s.n, s.url, s.title, s.publishedAt ?? null);
+      this.db.prepare('UPDATE sessions SET updated_at = ? WHERE session_id = ?').run(at, turn.sessionId);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** The numbered sources of one turn. */
+  listSources(turnId: string): Source[] {
+    const rows = this.db
+      .prepare('SELECT n, url, title, published_at AS publishedAt FROM sources WHERE turn_id = ? ORDER BY n')
+      .all(turnId) as unknown as (Omit<Source, 'publishedAt'> & { publishedAt: string | null })[];
+    return rows.map(({ publishedAt, ...rest }) => ({ ...rest, ...(publishedAt ? { publishedAt } : {}) }));
   }
 
   /** A session's turns, oldest first. With limit, only the most recent ones. */

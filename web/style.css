@@ -151,6 +151,104 @@ main {
   align-self: flex-end;
   background: var(--user);
 }
+.msg.assistant.error {
+  white-space: pre-wrap;
+}
+/* Markdown inside an answer */
+.msg.assistant {
+  white-space: normal;
+}
+.msg.assistant > :first-child {
+  margin-top: 0;
+}
+.msg.assistant > :last-child {
+  margin-bottom: 0;
+}
+.msg.assistant p,
+.msg.assistant ul,
+.msg.assistant ol,
+.msg.assistant pre,
+.msg.assistant .table-scroll {
+  margin: 0.6em 0;
+}
+.msg.assistant ul,
+.msg.assistant ol {
+  padding-left: 1.4em;
+}
+.msg.assistant h1,
+.msg.assistant h2,
+.msg.assistant h3,
+.msg.assistant h4 {
+  margin: 0.9em 0 0.4em;
+  font-size: 1em;
+}
+.msg.assistant a {
+  color: var(--accent);
+}
+.msg.assistant code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--side);
+  font-size: 0.9em;
+}
+.msg.assistant pre {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--side);
+  overflow-x: auto;
+}
+.msg.assistant pre code {
+  padding: 0;
+  background: none;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.msg.assistant table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.msg.assistant th,
+.msg.assistant td {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.msg.assistant th {
+  background: var(--side);
+}
+.msg.assistant a.cite {
+  display: inline-block;
+  min-width: 1.5em;
+  margin: 0 1px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--user);
+  color: var(--text);
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: 0.15em;
+}
+.status {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 13px;
+}
+.sources {
+  align-self: flex-start;
+  max-width: 88%;
+  margin: -4px 0 0;
+  padding-left: 2em;
+  color: var(--muted);
+  font-size: 13px;
+}
+.sources a {
+  color: var(--accent);
+}
 .msg.assistant {
   align-self: flex-start;
   background: var(--panel);

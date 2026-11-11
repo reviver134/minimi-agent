@@ -29,7 +29,7 @@ describe('POST /api/chat', () => {
     const done = events.find((e) => e.event === 'done')!;
     expect(done.data.ttft_ms).toBeLessThan(done.data.total_ms);
 
-    expect(model.requests[0]!.system).toBe('You are a test.');
+    expect(model.requests[0]!.system.startsWith('You are a test.')).toBe(true);
     expect(model.requests[0]!.messages).toEqual([{ role: 'user', content: 'count to five' }]);
 
     // Every step is written to turn_metrics against the turn_id.
@@ -37,12 +37,12 @@ describe('POST /api/chat', () => {
     expect(steps.map((m) => m.step)).toEqual([
       'build_context',
       'first_token',
-      'model_stream',
+      'model_round',
       'store_turn',
       'title',
     ]);
     expect(steps.every((m) => m.status === 'ok')).toBe(true);
-    const stream = steps.find((m) => m.step === 'model_stream')!;
+    const stream = steps.find((m) => m.step === 'model_round')!;
     expect(stream.tokensIn).toBeGreaterThan(0);
     expect(stream.tokensOut).toBe(chunks.join('').length);
   });
@@ -56,7 +56,7 @@ describe('POST /api/chat', () => {
     expect(events.map((e) => e.event)).toEqual(['token', 'error']);
     expect(events[1]!.data.message).not.toContain('secret');
     const steps = store.listMetrics(events[1]!.data.turn_id);
-    expect(steps.find((m) => m.step === 'model_stream')!.status).toBe('error');
+    expect(steps.find((m) => m.step === 'model_round')!.status).toBe('error');
     expect(store.listSessions(user.user_id)).toEqual([]);
   });
 

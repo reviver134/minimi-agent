@@ -123,7 +123,7 @@ describe('sessions', () => {
       sessionId = doneOf(events).session_id;
     }
     const last = model.requests.filter((r) => r.model === 'main').at(-1)!;
-    expect(last.messages.filter((m) => m.role === 'user').map((m) => m.content)).toEqual([
+    expect(last.messages.flatMap((m) => (m.role === 'user' ? [m.content] : []))).toEqual([
       'message 2',
       'message 3',
       'message 4',

@@ -7,10 +7,12 @@ const required = (name: string) =>
 
 const schema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: required('GOOGLE_GENERATIVE_AI_API_KEY'),
-  // Used from session 3 (web search); becomes required there.
-  TAVILY_API_KEY: z.string().trim().optional(),
+  TAVILY_API_KEY: required('TAVILY_API_KEY'),
   MODEL_MAIN: z.string().trim().min(1).default('gemini-3.6-flash'),
   MODEL_FAST: z.string().trim().min(1).default('gemini-3.5-flash-lite'),
+  THINKING_LEVEL: z
+    .enum(['minimal', 'low', 'medium', 'high'], { error: 'THINKING_LEVEL must be minimal, low, medium or high' })
+    .default('low'),
   PORT: z.coerce
     .number({ error: 'PORT must be a number' })
     .int('PORT must be a whole number')
@@ -27,9 +29,10 @@ const schema = z.object({
 
 export interface Config {
   googleApiKey: string;
-  tavilyApiKey: string | undefined;
+  tavilyApiKey: string;
   modelMain: string;
   modelFast: string;
+  thinkingLevel: 'minimal' | 'low' | 'medium' | 'high';
   port: number;
   dbPath: string;
   clockOverride: string | undefined;
@@ -60,6 +63,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     tavilyApiKey: v.TAVILY_API_KEY,
     modelMain: v.MODEL_MAIN,
     modelFast: v.MODEL_FAST,
+    thinkingLevel: v.THINKING_LEVEL,
     port: v.PORT,
     dbPath: v.DB_PATH,
     clockOverride: v.CLOCK_OVERRIDE,

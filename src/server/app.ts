@@ -1,28 +1,43 @@
 // HTTP routes: users, sessions, the streaming chat endpoint and the static chat page.
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { HISTORY_MAX_TURNS, buildSessionHistory } from '../agent/context.ts';
+import { runAgent } from '../agent/loop.ts';
+import { buildSystemPrompt } from '../agent/prompt.ts';
+import { type Source, SourceRegistry } from '../agent/webSearch.ts';
 import type { ModelProvider } from '../llm/provider.ts';
 import { type Session, type Store, normaliseName } from '../memory/store.ts';
 import { makeTitle } from '../memory/title.ts';
+import type { SearchProvider } from '../search/provider.ts';
 import { timed } from '../telemetry/timed.ts';
 import { type Clock, isTimezone } from '../temporal/clock.ts';
 
 export interface AppDeps {
   model: ModelProvider;
+  search: SearchProvider;
   /** Holds users, sessions and turns, and records the metrics of every turn. */
   store: Store;
   clock: Clock;
+  /** The fixed part of the system prompt (prompts/system.md). */
   systemPrompt: string;
   titlePrompt: string;
   /** Folder holding the static chat page, relative to the working directory. */
   webRoot?: string;
 }
 
+// The chat page's two libraries, served from node_modules so the page needs no build step and no CDN.
+const VENDOR: Record<string, string> = {
+  'marked.js': 'node_modules/marked/lib/marked.umd.js',
+  'purify.js': 'node_modules/dompurify/dist/purify.min.js',
+};
+
 const MAX_MESSAGE_CHARS = 8000;
 const MAX_NAME_CHARS = 60;
+
+const sourceJson = (s: Source) => ({ n: s.n, url: s.url, title: s.title, published_at: s.publishedAt ?? null });
 
 const sessionJson = (s: Session) => ({
   session_id: s.sessionId,
@@ -68,6 +83,7 @@ export function createApp(deps: AppDeps): Hono {
         user_message: t.userMessage,
         assistant_message: t.assistantMessage,
         created_at: t.createdAt,
+        sources: store.listSources(t.turnId).map(sourceJson),
       })),
     });
   });
@@ -75,6 +91,8 @@ export function createApp(deps: AppDeps): Hono {
   // Body: {user_id, message, session_id?}. Without session_id a new session is
   // started. Replies as server-sent events:
   //   token {text}                                     one per piece of the answer, in order
+  //   search {queries}                                 the agent started a round of web searches
+  //   sources {sources: [{n, url, title}], failed}     that round finished; failed lists queries that got no answer
   //   done  {turn_id, session_id, ttft_ms, total_ms}   after the last token; the turn is stored
   //   title {session_id, title}                        after done, on a session's first turn
   //   error {turn_id, message}                         if the model call failed; nothing is stored
@@ -102,6 +120,7 @@ export function createApp(deps: AppDeps): Hono {
       let answer = '';
       let totalMs = 0;
       let firstTurn = true;
+      const registry = new SourceRegistry();
 
       try {
         const history = await timed(store, turnId, 'build_context', () => {
@@ -111,15 +130,25 @@ export function createApp(deps: AppDeps): Hono {
           return buildSessionHistory(turns);
         });
 
-        await timed(store, turnId, 'model_stream', async (tokens) => {
-          const result = deps.model.streamText({
-            model: 'main',
-            system: deps.systemPrompt,
-            messages: [...history, { role: 'user', content: message }],
-            signal: abort.signal,
-          });
-          for await (const text of result.textStream) {
-            if (!text) continue;
+        const events = runAgent({
+          model: deps.model,
+          search: deps.search,
+          metrics: store,
+          turnId,
+          system: buildSystemPrompt(deps.systemPrompt, { now: deps.clock.now(), timezone: user.timezone }),
+          messages: [...history, { role: 'user', content: message }],
+          registry,
+          signal: abort.signal,
+        });
+        for await (const event of events) {
+          if (event.type === 'search') {
+            await stream.writeSSE({ event: 'search', data: JSON.stringify({ queries: event.queries }) });
+          } else if (event.type === 'search_done') {
+            await stream.writeSSE({
+              event: 'sources',
+              data: JSON.stringify({ sources: event.sources.map(sourceJson), failed: event.failed }),
+            });
+          } else {
             if (ttftMs === undefined) {
               ttftMs = performance.now() - receivedAt;
               store.record({
@@ -130,14 +159,11 @@ export function createApp(deps: AppDeps): Hono {
                 status: 'ok',
               });
             }
-            answer += text;
-            await stream.writeSSE({ event: 'token', data: JSON.stringify({ text }) });
+            answer += event.text;
+            await stream.writeSSE({ event: 'token', data: JSON.stringify({ text: event.text }) });
           }
-          totalMs = performance.now() - receivedAt; // turn latency ends at the last token
-          const usage = await result.usage;
-          tokens.tokensIn = usage.tokensIn;
-          tokens.tokensOut = usage.tokensOut;
-        });
+        }
+        totalMs = performance.now() - receivedAt; // turn latency ends at the last token
         if (abort.signal.aborted) return; // the reader left mid-answer; keep no half turn
         if (!answer) throw new Error('the model returned no text');
       } catch (err) {
@@ -165,7 +191,7 @@ export function createApp(deps: AppDeps): Hono {
           assistantMessage: answer,
           createdAt: now,
           userTimezone: user.timezone,
-        });
+        }, registry.all());
         return target;
       });
       await stream.writeSSE({
@@ -188,6 +214,15 @@ export function createApp(deps: AppDeps): Hono {
           .writeSSE({ event: 'title', data: JSON.stringify({ session_id: stored.sessionId, title }) })
           .catch(() => {}); // the reader may have left; the title is stored either way
       }
+    });
+  });
+
+  app.get('/vendor/:file', async (c) => {
+    const path = VENDOR[c.req.param('file')];
+    if (!path) return c.notFound();
+    return c.body(await readFile(path, 'utf8'), 200, {
+      'content-type': 'text/javascript; charset=utf-8',
+      'cache-control': 'max-age=3600',
     });
   });
 

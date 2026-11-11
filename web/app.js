@@ -52,6 +52,91 @@ function add(className, text = '') {
 
 const seconds = (ms) => `${(ms / 1000).toFixed(2)} s`;
 
+// --- showing an answer ---
+
+const CITATION = /\[(\d+(?:\s*,\s*\d+)*)\]/g;
+
+// Turns the model's Markdown into safe HTML, then turns [n] into links to source n.
+function renderAnswer(el, text, sources) {
+  if (!window.marked || !window.DOMPurify) {
+    el.textContent = text;
+    return new Set();
+  }
+  el.innerHTML = DOMPurify.sanitize(marked.parse(text, { gfm: true }));
+  for (const table of el.querySelectorAll('table')) {
+    const scroll = document.createElement('div');
+    scroll.className = 'table-scroll';
+    table.replaceWith(scroll);
+    scroll.append(table);
+  }
+  const byNumber = new Map(sources.map((s) => [s.n, s]));
+  const cited = new Set();
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) {
+    if (!walker.currentNode.parentElement.closest('a, code, pre')) textNodes.push(walker.currentNode);
+  }
+  for (const node of textNodes) {
+    if (!node.nodeValue.includes('[')) continue;
+    const pieces = [];
+    let last = 0;
+    for (const match of node.nodeValue.matchAll(CITATION)) {
+      const numbers = match[1].split(',').map((n) => Number(n.trim()));
+      if (!numbers.every((n) => byNumber.has(n))) continue;
+      pieces.push(node.nodeValue.slice(last, match.index));
+      for (const n of numbers) {
+        const source = byNumber.get(n);
+        const link = document.createElement('a');
+        link.className = 'cite';
+        link.href = source.url;
+        link.title = source.title;
+        link.textContent = String(n);
+        pieces.push(link);
+        cited.add(n);
+      }
+      last = match.index + match[0].length;
+    }
+    if (pieces.length === 0) continue;
+    pieces.push(node.nodeValue.slice(last));
+    node.replaceWith(...pieces);
+  }
+  for (const link of el.querySelectorAll('a')) {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
+  return cited;
+}
+
+const host = (url) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+};
+
+// The numbered list under an answer: only the sources it actually cites.
+function showSources(after, sources, cited) {
+  const used = sources.filter((s) => cited.has(s.n));
+  if (used.length === 0) return;
+  const list = document.createElement('ol');
+  list.className = 'sources';
+  for (const source of used) {
+    const item = document.createElement('li');
+    item.value = source.n;
+    const link = document.createElement('a');
+    link.href = source.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = source.title || host(source.url);
+    const where = document.createElement('span');
+    where.textContent = ` ${host(source.url)}`;
+    item.append(link, where);
+    list.append(item);
+  }
+  after.after(list);
+}
+
 // --- name ---
 
 function askName(problem = '') {
@@ -130,7 +215,8 @@ async function openSession(id) {
   messages.replaceChildren();
   for (const turn of turns) {
     add('msg user', turn.user_message);
-    add('msg assistant', turn.assistant_message);
+    const answer = add('msg assistant');
+    showSources(answer, turn.sources, renderAnswer(answer, turn.assistant_message, turn.sources));
   }
   await loadSessions();
   input.focus();
@@ -175,10 +261,35 @@ async function ask(message) {
   };
   send.disabled = true;
   add('msg user', message);
+  const status = add('status');
+  status.hidden = true;
   const answer = add('msg assistant pending');
   const sentAt = performance.now();
+  const sources = [];
+  const queries = []; // {text, state: 'running' | 'done' | 'failed'}
+  let text = '';
+  let cited = new Set();
   let firstTokenMs;
   let finished = false;
+  let drawing = false;
+
+  const draw = () => {
+    drawing = false;
+    cited = renderAnswer(answer, text, sources);
+    if (shown === view) messages.scrollTop = messages.scrollHeight;
+  };
+  const showStatus = () => {
+    const running = queries.some((q) => q.state === 'running');
+    status.hidden = false;
+    status.replaceChildren(running ? 'Searching the web: ' : 'Searched the web: ');
+    queries.forEach((q, i) => {
+      const item = document.createElement('span');
+      item.textContent = q.state === 'failed' ? `${q.text} (failed)` : q.text;
+      if (q.state === 'failed') item.className = 'error';
+      status.append(i ? ' · ' : '', item);
+    });
+    if (shown === view) messages.scrollTop = messages.scrollHeight;
+  };
 
   try {
     const response = await fetch(
@@ -192,11 +303,25 @@ async function ask(message) {
     await readEvents(response, (name, data) => {
       if (name === 'token') {
         firstTokenMs ??= performance.now() - sentAt;
-        answer.textContent += data.text;
-        if (shown === view) messages.scrollTop = messages.scrollHeight;
+        text += data.text;
+        if (!drawing) {
+          drawing = true;
+          requestAnimationFrame(draw);
+        }
+      } else if (name === 'search') {
+        for (const q of data.queries) queries.push({ text: q, state: 'running' });
+        showStatus();
+      } else if (name === 'sources') {
+        sources.push(...data.sources);
+        for (const q of queries) {
+          if (q.state === 'running') q.state = data.failed.includes(q.text) ? 'failed' : 'done';
+        }
+        showStatus();
       } else if (name === 'done') {
         finished = true;
         answer.classList.remove('pending');
+        draw();
+        showSources(answer, sources, cited);
         const first = firstTokenMs === undefined ? 'no text' : seconds(firstTokenMs);
         const timing = `first token ${first} · total ${seconds(performance.now() - sentAt)}`;
         if (shown === view) {
@@ -213,11 +338,12 @@ async function ask(message) {
     });
     if (!finished) throw new Error('The reply was cut off. Please try again.');
   } catch (err) {
-    const text = err instanceof TypeError ? 'Could not reach the server.' : err.message;
-    if (answer.textContent) {
-      if (shown === view) add('msg assistant error', text);
+    const problem = err instanceof TypeError ? 'Could not reach the server.' : err.message;
+    if (text) {
+      draw();
+      if (shown === view) add('msg assistant error', problem);
     } else {
-      answer.textContent = text;
+      answer.textContent = problem;
       answer.classList.add('error');
     }
   } finally {

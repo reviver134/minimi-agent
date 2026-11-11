@@ -1,5 +1,4 @@
-// Tables in use so far. answer_records and sources arrive with the sessions
-// that write them (docs/PLAN.md, data model).
+// Tables in use so far. answer_records arrives with session 5 (docs/PLAN.md, data model).
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   user_id      TEXT PRIMARY KEY,
@@ -29,6 +28,16 @@ CREATE TABLE IF NOT EXISTS turns (
 );
 CREATE INDEX IF NOT EXISTS turns_by_user_time ON turns (user_id, created_at);
 CREATE INDEX IF NOT EXISTS turns_by_session ON turns (session_id, created_at);
+
+-- Every search result the model was shown in a turn; n is its citation number.
+CREATE TABLE IF NOT EXISTS sources (
+  turn_id      TEXT NOT NULL REFERENCES turns(turn_id),
+  n            INTEGER NOT NULL,
+  url          TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  published_at TEXT,
+  PRIMARY KEY (turn_id, n)
+);
 
 -- No foreign key: a failed turn has metrics but no turns row.
 CREATE TABLE IF NOT EXISTS turn_metrics (

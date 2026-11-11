@@ -1,5 +1,7 @@
 import type { ModelProvider } from '../src/llm/provider.ts';
 import { Store } from '../src/memory/store.ts';
+import { MockSearch } from '../src/search/mock.ts';
+import type { SearchProvider } from '../src/search/provider.ts';
 import { createApp } from '../src/server/app.ts';
 import { type Clock, systemClock } from '../src/temporal/clock.ts';
 
@@ -16,10 +18,15 @@ export const json = (body: unknown): RequestInit => ({
 });
 
 /** An app on an in-memory database with the mock model given. */
-export function setup(model: ModelProvider, clock: Clock = systemClock) {
+export function setup(
+  model: ModelProvider,
+  clock: Clock = systemClock,
+  search: SearchProvider = new MockSearch(),
+) {
   const store = new Store(':memory:');
   const app = createApp({
     model,
+    search,
     store,
     clock,
     systemPrompt: 'You are a test.',
