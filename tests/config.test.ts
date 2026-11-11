@@ -9,7 +9,7 @@ describe('config', () => {
   it('fills defaults when only the key is set', () => {
     const config = loadConfig({ GOOGLE_GENERATIVE_AI_API_KEY: 'test-key', MODEL_MAIN: '' });
     expect(config.port).toBe(3000);
-    expect(config.modelMain).toBe('gemini-3.8-flash');
+    expect(config.modelMain).toBe('gemini-3.6-flash');
     expect(config.modelFast).toBe('gemini-3.5-flash-lite');
     expect(config.dbPath).toBe('./data/minimi.db');
   });

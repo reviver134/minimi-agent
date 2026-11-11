@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { serve } from '@hono/node-server';
 import { ConfigError, loadConfig } from '../config.ts';
 import { GeminiModel } from '../llm/gemini.ts';
-import { MemoryMetrics } from '../telemetry/timed.ts';
+import { Store } from '../memory/store.ts';
+import { systemClock } from '../temporal/clock.ts';
 import { createApp } from './app.ts';
 
 const root = join(import.meta.dirname, '..', '..');
@@ -23,14 +24,18 @@ try {
   process.exit(1);
 }
 
+const readPrompt = (name: string) => readFileSync(join('prompts', name), 'utf8').trim();
+
 const app = createApp({
   model: new GeminiModel({
     apiKey: config.googleApiKey,
     modelMain: config.modelMain,
     modelFast: config.modelFast,
   }),
-  metrics: new MemoryMetrics(),
-  systemPrompt: readFileSync(join('prompts', 'system.md'), 'utf8').trim(),
+  store: new Store(config.dbPath),
+  clock: systemClock,
+  systemPrompt: readPrompt('system.md'),
+  titlePrompt: readPrompt('title.md'),
 });
 
 // Local only: there is no login, so the server does not listen on the network.

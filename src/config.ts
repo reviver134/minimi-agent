@@ -9,7 +9,7 @@ const schema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: required('GOOGLE_GENERATIVE_AI_API_KEY'),
   // Used from session 3 (web search); becomes required there.
   TAVILY_API_KEY: z.string().trim().optional(),
-  MODEL_MAIN: z.string().trim().min(1).default('gemini-3.8-flash'),
+  MODEL_MAIN: z.string().trim().min(1).default('gemini-3.6-flash'),
   MODEL_FAST: z.string().trim().min(1).default('gemini-3.5-flash-lite'),
   PORT: z.coerce
     .number({ error: 'PORT must be a number' })

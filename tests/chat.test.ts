@@ -1,56 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { MockModel } from '../src/llm/mock.ts';
-import { createApp } from '../src/server/app.ts';
-import { MemoryMetrics } from '../src/telemetry/timed.ts';
-
-interface SseEvent {
-  event: string;
-  data: any;
-  atMs: number;
-}
-
-function setup(model: MockModel) {
-  const metrics = new MemoryMetrics();
-  const app = createApp({ model, metrics, systemPrompt: 'You are a test.' });
-  const chat = (body: unknown) =>
-    app.request('/api/chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  return { metrics, chat };
-}
-
-/** Reads the event stream, noting when each event arrived. */
-async function readEvents(response: Response): Promise<SseEvent[]> {
-  const events: SseEvent[] = [];
-  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
-  const t0 = performance.now();
-  let buffer = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += value;
-    let end: number;
-    while ((end = buffer.indexOf('\n\n')) !== -1) {
-      const block = buffer.slice(0, end);
-      buffer = buffer.slice(end + 2);
-      const event = /^event: (.*)$/m.exec(block)?.[1] ?? 'message';
-      const data = /^data: (.*)$/m.exec(block)?.[1];
-      if (data) events.push({ event, data: JSON.parse(data), atMs: performance.now() - t0 });
-    }
-  }
-  return events;
-}
+import { readEvents, setup } from './helpers.ts';
 
 describe('POST /api/chat', () => {
   // S1-T3
   it('streams tokens incrementally and in order', async () => {
     const chunks = ['One', ' two', ' three', ' four', ' five.'];
     const model = new MockModel({ chunks, delayMs: 40 });
-    const { chat, metrics } = setup(model);
+    const { chat, signIn, store } = setup(model);
+    const user = await signIn('demo');
 
-    const response = await chat({ message: 'count to five' });
+    const response = await chat({ user_id: user.user_id, message: 'count to five' });
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/event-stream');
 
@@ -66,31 +26,46 @@ describe('POST /api/chat', () => {
       expect(tokens[i]!.atMs).toBeGreaterThan(tokens[i - 1]!.atMs);
     }
 
-    const done = events.at(-1)!;
-    expect(done.event).toBe('done');
+    const done = events.find((e) => e.event === 'done')!;
     expect(done.data.ttft_ms).toBeLessThan(done.data.total_ms);
 
     expect(model.requests[0]!.system).toBe('You are a test.');
     expect(model.requests[0]!.messages).toEqual([{ role: 'user', content: 'count to five' }]);
 
-    const steps = metrics.metrics.filter((m) => m.turnId === done.data.turn_id);
-    expect(steps.map((m) => m.step).sort()).toEqual(['first_token', 'model_stream']);
+    // Every step is written to turn_metrics against the turn_id.
+    const steps = store.listMetrics(done.data.turn_id);
+    expect(steps.map((m) => m.step)).toEqual([
+      'build_context',
+      'first_token',
+      'model_stream',
+      'store_turn',
+      'title',
+    ]);
     expect(steps.every((m) => m.status === 'ok')).toBe(true);
+    const stream = steps.find((m) => m.step === 'model_stream')!;
+    expect(stream.tokensIn).toBeGreaterThan(0);
+    expect(stream.tokensOut).toBe(chunks.join('').length);
   });
 
-  it('sends an error event when the model fails mid-stream', async () => {
+  it('sends an error event when the model fails mid-stream and stores no turn', async () => {
     const model = new MockModel({ chunks: ['Half'], failWith: new Error('upstream secret detail') });
-    const { chat, metrics } = setup(model);
+    const { chat, signIn, store } = setup(model);
+    const user = await signIn('demo');
 
-    const events = await readEvents(await chat({ message: 'hello' }));
+    const events = await readEvents(await chat({ user_id: user.user_id, message: 'hello' }));
     expect(events.map((e) => e.event)).toEqual(['token', 'error']);
     expect(events[1]!.data.message).not.toContain('secret');
-    expect(metrics.metrics.find((m) => m.step === 'model_stream')!.status).toBe('error');
+    const steps = store.listMetrics(events[1]!.data.turn_id);
+    expect(steps.find((m) => m.step === 'model_stream')!.status).toBe('error');
+    expect(store.listSessions(user.user_id)).toEqual([]);
   });
 
-  it('rejects an empty message', async () => {
-    const { chat } = setup(new MockModel());
-    expect((await chat({ message: '   ' })).status).toBe(400);
-    expect((await chat({})).status).toBe(400);
+  it('rejects an empty message, an unknown user and an unknown session', async () => {
+    const { chat, signIn } = setup(new MockModel());
+    const user = await signIn('demo');
+    expect((await chat({ user_id: user.user_id, message: '   ' })).status).toBe(400);
+    expect((await chat({ user_id: user.user_id })).status).toBe(400);
+    expect((await chat({ user_id: 'nobody', message: 'hi' })).status).toBe(404);
+    expect((await chat({ user_id: user.user_id, session_id: 'nope', message: 'hi' })).status).toBe(404);
   });
 });

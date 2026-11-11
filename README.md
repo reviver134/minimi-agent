@@ -2,7 +2,7 @@
 
 A chat agent with one tool, web search. It remembers dated conversations and can re-check its old answers against the live web.
 
-Status: session 1 of 6 is built (streaming chat with Gemini, no search or memory yet).
+Status: sessions 1 and 2 of 6 are built. It is a streaming chat with Gemini that keeps each person's chats in SQLite under their name and remembers the last turns of a chat. Web search and recall by date are not built yet.
 
 - Plan, design principles and per-session test sets: [docs/PLAN.md](docs/PLAN.md)
 - Evaluation questions: [evals/questions.md](evals/questions.md)

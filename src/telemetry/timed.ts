@@ -22,22 +22,28 @@ export class MemoryMetrics implements MetricsSink {
   }
 }
 
-/** Runs fn, records how long it took and whether it threw, and rethrows. */
+export type TokenCounts = Pick<Metric, 'tokensIn' | 'tokensOut'>;
+
+/**
+ * Runs fn, records how long it took and whether it threw, and rethrows.
+ * fn may fill in the token counts it is handed; they are recorded with the step.
+ */
 export async function timed<T>(
   sink: MetricsSink,
   turnId: string,
   step: string,
-  fn: () => T | Promise<T>,
+  fn: (tokens: TokenCounts) => T | Promise<T>,
 ): Promise<T> {
   const startedMs = Date.now();
   const t0 = performance.now();
+  const tokens: TokenCounts = {};
   let status: Metric['status'] = 'ok';
   try {
-    return await fn();
+    return await fn(tokens);
   } catch (err) {
     status = 'error';
     throw err;
   } finally {
-    sink.record({ turnId, step, startedMs, durationMs: performance.now() - t0, status });
+    sink.record({ turnId, step, startedMs, durationMs: performance.now() - t0, status, ...tokens });
   }
 }

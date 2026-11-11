@@ -1,6 +1,7 @@
 :root {
   --bg: #f7f6f3;
   --panel: #ffffff;
+  --side: #efede8;
   --text: #1c1b19;
   --muted: #6b6860;
   --line: #e1ded6;
@@ -13,6 +14,7 @@
   :root {
     --bg: #161614;
     --panel: #1f1f1c;
+    --side: #1b1b19;
     --text: #ecebe6;
     --muted: #9a978e;
     --line: #33322e;
@@ -25,6 +27,9 @@
 * {
   box-sizing: border-box;
 }
+[hidden] {
+  display: none !important;
+}
 html,
 body {
   height: 100%;
@@ -32,20 +37,84 @@ body {
 body {
   margin: 0;
   display: flex;
-  flex-direction: column;
   background: var(--bg);
   color: var(--text);
   font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
+
+/* Sidebar: the user's chats */
+#sidebar {
+  width: 250px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 12px;
+  background: var(--side);
+  border-right: 1px solid var(--line);
+}
+#sessions {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#sessions button {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#sessions button:hover {
+  background: var(--line);
+}
+#sessions button[aria-current='true'] {
+  background: var(--panel);
+  font-weight: 600;
+}
+#sessions .empty {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+#who {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+#who-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chat column */
+#chat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
 header,
 main,
-form {
+#composer {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
   padding: 0 16px;
 }
 header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding-top: 20px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
@@ -58,6 +127,9 @@ header p {
   margin: 2px 0 0;
   color: var(--muted);
   font-size: 14px;
+}
+#toggle-sidebar {
+  display: none;
 }
 main {
   flex: 1;
@@ -84,7 +156,7 @@ main {
   background: var(--panel);
   border: 1px solid var(--line);
 }
-.msg.error {
+.error {
   color: var(--error);
 }
 .msg.pending::after {
@@ -104,17 +176,15 @@ main {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-form {
+#composer {
   display: flex;
   gap: 8px;
   padding-top: 12px;
   padding-bottom: 16px;
   border-top: 1px solid var(--line);
 }
-textarea {
-  flex: 1;
-  resize: none;
-  max-height: 160px;
+textarea,
+input[type='text'] {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -122,13 +192,19 @@ textarea {
   color: inherit;
   font: inherit;
 }
+textarea {
+  flex: 1;
+  resize: none;
+  max-height: 160px;
+}
 textarea:focus-visible,
+input:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 button {
-  padding: 0 18px;
+  padding: 8px 18px;
   border: 0;
   border-radius: 10px;
   background: var(--accent);
@@ -140,4 +216,59 @@ button {
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+button.link {
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 400;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* Name entry */
+#name-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--bg);
+}
+#name-form {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#name-form h2 {
+  margin: 0;
+  font-size: 22px;
+}
+#name-form p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+#name-form p.error {
+  color: var(--error);
+  min-height: 1.5em;
+}
+
+@media (max-width: 720px) {
+  #toggle-sidebar {
+    display: block;
+  }
+  #sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 1;
+    transform: translateX(-100%);
+    transition: transform 0.15s;
+  }
+  body.sidebar-open #sidebar {
+    transform: none;
+    box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.35);
+  }
 }

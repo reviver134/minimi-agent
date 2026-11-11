@@ -115,7 +115,9 @@ Test set:
 
 Confirmed on 2026-11-11 (session 1):
 
-- **Model ids:** `gemini-3.8-flash` for `MODEL_MAIN` and `gemini-3.5-flash-lite` for `MODEL_FAST`, both on Google's current model list. The 2.5 models are deprecated and reroute on 1 December 2026. `gemini-4-argon` and `gemini-4-carbon` are the stronger, slower choices if answer quality needs it.
+- **Model ids:** `gemini-3.6-flash` (stable) for `MODEL_MAIN` and `gemini-3.5-flash-lite` for `MODEL_FAST`, both on Google's current model list. The 2.5 models are deprecated and reroute on 1 December 2026. `gemini-4-argon` and `gemini-4-carbon` are the stronger, slower choices if answer quality needs it.
+- **`gemini-3.8-flash` and `gemini-3.7-flash` are not usable yet** (first real calls, 2026-11-11): 3.8 sent its first byte after 293 s and 3.7 sent nothing in 25 s. The model wrapper now fails a call that has sent nothing after 20 s, so the user gets an error instead of waiting.
+- **Latency so far** (same "hello" request, repeated): `gemini-3.6-flash` first byte 1.9 to 8 s, once 13.5 s; `gemini-3.5-flash-lite` 1.8 to 2.9 s. The thinking level (`minimal`, `low`) made no consistent difference. Our own steps are negligible (context under 1 ms, storing a turn about 15 ms). This misses the 1.5 s target and is for the session 6 latency review; `gemini-3.5-flash-lite` as the main model is the first thing to try.
 - **Key variable:** `GOOGLE_GENERATIVE_AI_API_KEY` is what the AI SDK Google provider reads.
 - **AI SDK:** `ai` 7 with `@ai-sdk/google` 4. `streamText` takes `instructions` (not `system`), the provider factory is `createGoogle`, and errors are left out of `textStream`, so the wrapper rethrows them.
 - **`node:sqlite`:** works without a flag on Node 22.13+, so `engines` is `>=22.13`. **FTS5 is not compiled in** on Node 22.14 (`no such module: fts5`), so recall uses the `LIKE` fallback.
@@ -143,6 +145,15 @@ Test set:
 | S2-T6 | Auto | Turn stored with timezone Asia/Kolkata | `created_at` is UTC and the timezone is kept |
 | S2-T7 | Manual | Clear browser data, re-enter the same name | Sessions reappear |
 | S2-T8 | Manual | "My name is X" then "what is my name?" in one session | Answers from session history |
+
+Built on 2026-11-11 (session 2):
+
+- **Identity:** the browser remembers only the name. `POST /api/users` maps the normalised name to a `user_id` and stores the browser's timezone. Every session and turn read is scoped by `user_id`.
+- **Sessions start lazily:** a session row is created when its first reply is stored, so there are no empty sessions. A failed or abandoned reply stores nothing.
+- **Session history** goes to the model as chat messages (last 5 turns, 12,000 characters in total, each message cut to an equal share). Session 3 decides where it sits in the tagged prompt.
+- **Title:** made by the fast model after the `done` event and sent as a `title` event on the same stream. If that call fails, the title is the start of the first message.
+- **Metrics:** `build_context`, `first_token`, `model_stream` (with token counts), `store_turn` and `title` are written to `turn_metrics` for every turn.
+- Tables `answer_records` and `sources` are not created yet; sessions 3 and 5 add them.
 
 ### Session 3: web search tool and agent loop
 

@@ -7,15 +7,40 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header>
-      <h1>minimi</h1>
-      <p>Chat with web search and a memory for dates.</p>
-    </header>
-    <main id="messages" aria-live="polite"></main>
-    <form id="composer" autocomplete="off">
-      <textarea id="input" rows="1" placeholder="Ask something" aria-label="Message" required></textarea>
-      <button id="send" type="submit">Send</button>
-    </form>
+    <aside id="sidebar">
+      <button id="new-chat" type="button">New chat</button>
+      <nav id="sessions" aria-label="Your chats"></nav>
+      <div id="who">
+        <span id="who-name"></span>
+        <button id="switch-user" type="button" class="link">Change name</button>
+      </div>
+    </aside>
+
+    <div id="chat">
+      <header>
+        <button id="toggle-sidebar" type="button" class="link" aria-controls="sidebar">Chats</button>
+        <div>
+          <h1>minimi</h1>
+          <p>Chat with web search and a memory for dates.</p>
+        </div>
+      </header>
+      <main id="messages" aria-live="polite"></main>
+      <form id="composer" autocomplete="off">
+        <textarea id="input" rows="1" placeholder="Ask something" aria-label="Message" required></textarea>
+        <button id="send" type="submit">Send</button>
+      </form>
+    </div>
+
+    <div id="name-screen" hidden>
+      <form id="name-form" autocomplete="off">
+        <h2>What is your name?</h2>
+        <p>Your chats are kept under this name. Enter the same name later to get them back.</p>
+        <input id="name-input" type="text" maxlength="60" aria-label="Your name" required />
+        <p id="name-error" class="error" role="alert"></p>
+        <button type="submit">Continue</button>
+      </form>
+    </div>
+
     <script src="/app.js" type="module"></script>
   </body>
 </html>
