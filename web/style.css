@@ -1,0 +1,143 @@
+:root {
+  --bg: #f7f6f3;
+  --panel: #ffffff;
+  --text: #1c1b19;
+  --muted: #6b6860;
+  --line: #e1ded6;
+  --accent: #2f5fd0;
+  --accent-text: #ffffff;
+  --user: #e8eefc;
+  --error: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161614;
+    --panel: #1f1f1c;
+    --text: #ecebe6;
+    --muted: #9a978e;
+    --line: #33322e;
+    --accent: #7ea2ff;
+    --accent-text: #10182c;
+    --user: #26304a;
+    --error: #ff8a80;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+header,
+main,
+form {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+header {
+  padding-top: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+main {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.msg {
+  max-width: 88%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg.user {
+  align-self: flex-end;
+  background: var(--user);
+}
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.msg.error {
+  color: var(--error);
+}
+.msg.pending::after {
+  content: '▍';
+  color: var(--muted);
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.timing {
+  align-self: flex-start;
+  margin-top: -6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+form {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  padding-bottom: 16px;
+  border-top: 1px solid var(--line);
+}
+textarea {
+  flex: 1;
+  resize: none;
+  max-height: 160px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+}
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button {
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>minimi</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>minimi</h1>
+      <p>Chat with web search and a memory for dates.</p>
+    </header>
+    <main id="messages" aria-live="polite"></main>
+    <form id="composer" autocomplete="off">
+      <textarea id="input" rows="1" placeholder="Ask something" aria-label="Message" required></textarea>
+      <button id="send" type="submit">Send</button>
+    </form>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

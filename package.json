@@ -1,0 +1,29 @@
+{
+  "name": "minimi-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A chat agent with one tool, web search, that remembers dated conversations and re-checks its old answers.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server/main.ts",
+    "start": "tsx src/server/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^4.0.117",
+    "@hono/node-server": "^2.1.6",
+    "ai": "^7.0.169",
+    "hono": "^4.13.17",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
