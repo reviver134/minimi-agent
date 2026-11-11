@@ -154,7 +154,7 @@ const body = (value: string) => value.replace(/<(?=\/?\s*(search_results|query|r
 /** The tool result the model reads. */
 export function formatSearchResults(
   outcomes: QueryOutcome[],
-  { dropped = 0, lastRound = false } = {},
+  { dropped = 0, lastRound = false, searchDown = false } = {},
 ): string {
   const lines = ['<search_results>'];
   for (const outcome of outcomes) {
@@ -178,7 +178,9 @@ export function formatSearchResults(
   if (dropped > 0) {
     lines.push(`<note>${dropped} more ${dropped === 1 ? 'query was' : 'queries were'} not run: one call takes at most ${SEARCH_LIMITS.maxQueries}.</note>`);
   }
-  if (lastRound) {
+  if (searchDown) {
+    lines.push('<note>Web search is not working right now, so do not search again. Answer from what you know and from the records, and tell the user plainly that you could not check the web.</note>');
+  } else if (lastRound) {
     lines.push('<note>This was your last search for this message. Answer now with what you have, and say what you could not check.</note>');
   }
   return lines.join('\n');

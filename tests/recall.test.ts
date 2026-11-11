@@ -357,7 +357,11 @@ describe('recall through the chat endpoint', () => {
     const events = await ask('What did I ask you on 3 November?');
 
     expect(events.map((e) => e.event)).toEqual(['recall', 'token', 'done', 'title']);
-    expect(events[0]!.data).toEqual({ looked_for: 'Tuesday 3 November 2026', found: 2 });
+    expect(events[0]!.data).toEqual({
+      looked_for: 'Tuesday 3 November 2026',
+      found: 2,
+      turn_ids: ['seed-postgres', 'seed-test-runners'],
+    });
 
     // Code understood this one: no call to the fast model before the answer.
     expect(model.requests.filter((r) => r.label === 'understand')).toHaveLength(0);
@@ -385,7 +389,7 @@ describe('recall through the chat endpoint', () => {
   it('says so when there is no record, and offers the nearest day (C5)', async () => {
     const model = new MockModel();
     const events = await chatAs(model).ask('What did I ask you on 6 November?');
-    expect(events[0]!.data).toEqual({ looked_for: 'Friday 6 November 2026', found: 0 });
+    expect(events[0]!.data).toEqual({ looked_for: 'Friday 6 November 2026', found: 0, turn_ids: [] });
     const system = mainRequests(model)[0]!.system;
     expect(system).toContain('No records found.');
     expect(system).toContain('- Saturday 7 November 2026: asked "Good laptop for local model work under $2,000?"');

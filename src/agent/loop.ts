@@ -40,8 +40,9 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
   const maxQueries = deps.searchLimits?.maxQueries ?? SEARCH_LIMITS.maxQueries;
   const messages = [...deps.messages];
 
+  let searchDown = false;
   for (let round = 0; ; round++) {
-    const mayCall = round < maxRounds;
+    const mayCall = round < maxRounds && !searchDown;
     const result = deps.model.stream({
       model: 'main',
       system: deps.system,
@@ -83,7 +84,6 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
     const asked = calls.map((call) => readQueries(call.input));
     yield { type: 'search', round, queries: asked.flatMap((q) => q.slice(0, maxQueries)) };
 
-    const lastRound = round + 1 >= maxRounds;
     const outcomes = await Promise.all(
       asked.map((queries) =>
         runWebSearch(queries, {
@@ -97,6 +97,9 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
       ),
     );
     const flat = outcomes.flat();
+    // If every search of the round failed, the provider is down: searching again would only cost time.
+    searchDown = flat.length > 0 && flat.every((o) => o.status === 'failed');
+    const lastRound = round + 1 >= maxRounds || searchDown;
     yield {
       type: 'search_done',
       round,
@@ -112,6 +115,7 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
         output: formatSearchResults(outcomes[i]!, {
           dropped: Math.max(0, asked[i]!.length - maxQueries),
           lastRound,
+          searchDown,
         }),
       })),
     });

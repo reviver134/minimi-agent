@@ -21,6 +21,7 @@ import type { AnswerRecord } from '../memory/records.ts';
 import { type Session, type Store, normaliseName } from '../memory/store.ts';
 import { runWriteback } from '../memory/writeback.ts';
 import type { SearchProvider } from '../search/provider.ts';
+import { logError, userMessageFor } from '../telemetry/log.ts';
 import { timed } from '../telemetry/timed.ts';
 import { type Clock, isTimezone } from '../temporal/clock.ts';
 import { localDay, resolveDates } from '../temporal/dates.ts';
@@ -65,6 +66,12 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get('/api/health', (c) => c.json({ ok: true }));
 
+  // Anything a route did not expect: log it, and tell the page in words it can show.
+  app.onError((err, c) => {
+    logError(`${c.req.method} ${c.req.path} failed`, err);
+    return c.json({ error: 'Something went wrong on the server. Please try again.' }, 500);
+  });
+
   // A name is the whole identity: the same name always maps to the same user.
   app.post('/api/users', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -103,7 +110,7 @@ export function createApp(deps: AppDeps): Hono {
 
   // Body: {user_id, message, session_id?}. Without session_id a new session is
   // started. Replies as server-sent events:
-  //   recall {looked_for, found}                       memory was looked up for this message
+  //   recall {looked_for, found, turn_ids}             memory was looked up for this message
   //   token {text}                                     one per piece of the answer, in order
   //   search {queries}                                 the agent started a round of web searches
   //   sources {sources: [{n, url, title}], failed}     that round finished; failed lists queries that got no answer
@@ -178,7 +185,11 @@ export function createApp(deps: AppDeps): Hono {
             mayNotSearch = !understood.needsSearch;
             await stream.writeSSE({
               event: 'recall',
-              data: JSON.stringify({ looked_for: describeLookup(found), found: found.turns.length }),
+              data: JSON.stringify({
+                looked_for: describeLookup(found),
+                found: found.turns.length,
+                turn_ids: found.turns.map((t) => t.turnId),
+              }),
             });
 
             // Re-check: the question is also about now, and the recalled answers
@@ -262,13 +273,10 @@ export function createApp(deps: AppDeps): Hono {
         if (!answer) throw new Error('the model returned no text');
       } catch (err) {
         if (abort.signal.aborted) return;
-        console.error(`[${turnId}] model call failed: ${err instanceof Error ? err.message : err}`);
+        logError(`[${turnId}] turn failed`, err);
         await stream.writeSSE({
           event: 'error',
-          data: JSON.stringify({
-            turn_id: turnId,
-            message: 'The model could not answer. Please try again.',
-          }),
+          data: JSON.stringify({ turn_id: turnId, message: userMessageFor(err) }),
         });
         return;
       }
@@ -326,7 +334,7 @@ export function createApp(deps: AppDeps): Hono {
         }
         return result;
       }).catch((err) => {
-        console.error(`[${turnId}] write-back failed: ${err instanceof Error ? err.message : err}`);
+        logError(`[${turnId}] write-back failed`, err);
         return undefined;
       });
       if (filed?.title) {

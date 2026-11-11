@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import type { Source } from '../agent/webSearch.ts';
 import { type ModelProvider, collectText } from '../llm/provider.ts';
+import { logError } from '../telemetry/log.ts';
 import { type AnswerRecord, buildRecord, cleanProfile } from './records.ts';
 import type { Turn } from './store.ts';
 
@@ -115,7 +116,7 @@ export async function runWriteback(
       if (parts.summary && parsed.summary?.trim()) result.summary = parsed.summary.trim().slice(0, 800);
     } catch (err) {
       // The turn is already stored and the user already has the answer: log and carry on.
-      console.error(`write-back failed: ${err instanceof Error ? err.message : err}`);
+      logError('write-back failed', err);
     }
   }
   if (parts.title && !result.title) result.title = tidyTitle(input.userMessage);

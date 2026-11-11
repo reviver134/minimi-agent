@@ -6,6 +6,7 @@ import { ConfigError, loadConfig } from '../config.ts';
 import { GeminiModel } from '../llm/gemini.ts';
 import { Store } from '../memory/store.ts';
 import { TavilySearch } from '../search/tavily.ts';
+import { registerSecrets } from '../telemetry/log.ts';
 import { fixedClock, systemClock } from '../temporal/clock.ts';
 import { createApp } from './app.ts';
 
@@ -24,6 +25,8 @@ try {
   console.error(err.message);
   process.exit(1);
 }
+
+registerSecrets([config.googleApiKey, config.tavilyApiKey]);
 
 const readPrompt = (name: string) => readFileSync(join('prompts', name), 'utf8').trim();
 
@@ -44,8 +47,17 @@ const app = createApp({
 });
 
 // Local only: there is no login, so the server does not listen on the network.
-serve({ fetch: app.fetch, port: config.port, hostname: '127.0.0.1' }, (info) => {
+const server = serve({ fetch: app.fetch, port: config.port, hostname: '127.0.0.1' }, (info) => {
   console.log(`minimi-agent is running at http://localhost:${info.port}`);
   if (config.clockOverride) console.log(`clock is fixed at ${config.clockOverride}`);
   console.log(`models: main=${config.modelMain} (thinking ${config.thinkingLevel}) fast=${config.modelFast}`);
+});
+
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${config.port} is already in use. Stop the other program or set PORT in .env.`);
+  } else {
+    console.error(`The server could not start: ${err.message}`);
+  }
+  process.exit(1);
 });

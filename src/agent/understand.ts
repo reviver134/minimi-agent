@@ -4,6 +4,7 @@
 // the call fails or is slow, code falls back to rules, so a turn never depends on it.
 import { z } from 'zod';
 import { type ModelProvider, collectText } from '../llm/provider.ts';
+import { logError } from '../telemetry/log.ts';
 import { type DateMention, type DayRange, addDays, describeDay, localDay } from '../temporal/dates.ts';
 
 export interface Understanding {
@@ -174,7 +175,7 @@ export async function understandQuery(
       fromModel: true,
     };
   } catch (err) {
-    console.error(`query understanding failed, using rules: ${err instanceof Error ? err.message : err}`);
+    logError('query understanding failed, using rules', err);
     return understandByRules(input.message, input.mentions, today);
   }
 }

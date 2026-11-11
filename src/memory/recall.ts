@@ -46,7 +46,9 @@ const STOPWORDS = new Set(
     'today yesterday week month year last past since still now then ago earlier before again please can could would should ' +
     'price prices pricing cost costs change changed changes correct right thing things something anything ' +
     'january february march april may june july august september october november december ' +
-    'monday tuesday wednesday thursday friday saturday sunday tomorrow tonight morning').split(' '),
+    'monday tuesday wednesday thursday friday saturday sunday tomorrow tonight morning ' +
+    'use used using tell want wanted need needed make made give gave good best better more less also just like ' +
+    'know think sure really actually there here them they their will shall been being much many').split(' '),
 );
 
 /** Lower-case subject words: no stopwords, no short words. */
@@ -72,7 +74,8 @@ const hits = (turn: RecalledTurn, keywords: string[]) => keywords.filter((k) => 
 
 export function recall(store: Store, query: RecallQuery): RecallResult {
   const limit = query.limit ?? 12;
-  const topics = cleanTopics(query.topics);
+  // Words taken straight from a message narrow the search only if they are long enough to mean something.
+  const topics = cleanTopics(query.topics).filter((t) => !query.softTopics || t.length >= 4);
   const ranges = query.ranges.filter((r) => r.from <= query.today);
   const base = { ranges: query.ranges, topics, topicMissed: false, future: false, nearest: [], truncated: false };
 

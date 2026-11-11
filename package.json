@@ -8,9 +8,10 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "dev": "tsx watch src/server/main.ts",
-    "start": "tsx src/server/main.ts",
-    "seed": "tsx scripts/seed.ts",
+    "dev": "tsx watch --disable-warning=ExperimentalWarning src/server/main.ts",
+    "start": "tsx --disable-warning=ExperimentalWarning src/server/main.ts",
+    "seed": "tsx --disable-warning=ExperimentalWarning scripts/seed.ts",
+    "evals": "tsx --disable-warning=ExperimentalWarning evals/run.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
