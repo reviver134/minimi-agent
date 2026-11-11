@@ -8,7 +8,7 @@ const required = (name: string) =>
 const schema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: required('GOOGLE_GENERATIVE_AI_API_KEY'),
   TAVILY_API_KEY: required('TAVILY_API_KEY'),
-  MODEL_MAIN: z.string().trim().min(1).default('gemini-3.6-flash'),
+  MODEL_MAIN: z.string().trim().min(1).default('gemini-3.5-flash-lite'),
   MODEL_FAST: z.string().trim().min(1).default('gemini-3.5-flash-lite'),
   THINKING_LEVEL: z
     .enum(['minimal', 'low', 'medium', 'high'], { error: 'THINKING_LEVEL must be minimal, low, medium or high' })

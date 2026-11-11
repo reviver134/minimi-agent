@@ -204,7 +204,7 @@ Live results, 2026-11-11 (S3-T8, S3-T9):
 
 Open problems for the session 6 review:
 
-- **Free-tier quota.** The free tier allows 20 requests a day per project on `gemini-3.6-flash`; testing used them up, so B3 to B5 ran on `gemini-3.5-flash-lite`. A search question costs 2 to 4 requests. Either billing is turned on for the key or the main model changes.
+- **Free-tier quota.** The free tier allows 20 requests a day per project on `gemini-3.6-flash`; testing used them up, so B3 to B5 ran on `gemini-3.5-flash-lite`. A search question costs 2 to 4 requests. **Decided 2026-11-11: `MODEL_MAIN` defaults to `gemini-3.5-flash-lite`**, which works on a free key. It is the weaker model (see B4), so the prompt has to carry more; `gemini-3.6-flash` stays the choice for a key with billing.
 - **Latency misses the 5 s search target** (6 to 19 s). Searches are not the cause (parallel, about 1.9 s per round); the model spends 5 to 11 s before its first word once it holds 7,000 tokens of results. To try: `THINKING_LEVEL=minimal`, fewer or shorter results, and showing the search status line sooner (already shown while searching).
 
 ### Session 4: dates and recall

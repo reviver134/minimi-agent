@@ -12,7 +12,7 @@ Status: sessions 1 to 3 of 6 are built. It is a streaming chat with Gemini that 
 
 Needs Node 22.13 or newer. Copy `.env.example` to `.env` and set `GOOGLE_GENERATIVE_AI_API_KEY` and `TAVILY_API_KEY`.
 
-A free-tier Gemini key allows only 20 requests a day on the default main model, and a question with a web search uses 2 to 4 of them. See the note in `.env.example`.
+The default main model is `gemini-3.5-flash-lite`, which works on a free-tier Gemini key. `gemini-3.6-flash` answers better but a free key allows only 20 requests a day on it; see the note in `.env.example`.
 
 ```bash
 npm install
